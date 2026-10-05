@@ -44,10 +44,6 @@ const (
 	launchdPlistPath   = "/Library/LaunchDaemons/com.cybx.privacylens.plist"
 	systemdServicePath = "/etc/systemd/system/privacylens.service"
 	systemdTimerPath   = "/etc/systemd/system/privacylens.timer"
-	// uninstallRegKey is the Windows "Installed apps" (Add/Remove Programs)
-	// entry.
-	uninstallRegKey = `HKLM\Software\Microsoft\Windows\CurrentVersion\Uninstall\PrivacyLens`
-	envRegKey       = `HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment`
 )
 
 // installPaths resolves the per-OS install layout.
@@ -201,6 +197,12 @@ func runInstall(args []string) int {
 	fset := flag.NewFlagSet("install", flag.ExitOnError)
 	noOCR := fset.Bool("no-ocr", false, "skip installing the OCR tools (tesseract, poppler)")
 	pause := fset.Bool("pause", false, "wait for Enter before exiting (for double-click installs)")
+	// -wizard is passed by the Windows setup wizard, which creates the Start
+	// Menu shortcut and Installed-apps entry itself, the way every Windows
+	// installer does. Doing them from here means shelling out to PowerShell
+	// and reg.exe - exactly what antivirus behavior monitors watch a newly
+	// arrived program for.
+	wizard := fset.Bool("wizard", false, "internal: called from the setup wizard")
 	fset.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Usage:
   privacylens install [-no-ocr] [-pause]
@@ -222,14 +224,24 @@ Flags:
 	if !proceed {
 		return code
 	}
-	code = install(resolveInstallPaths(), *noOCR)
+	code = install(resolveInstallPaths(), installOptions{noOCR: *noOCR, fromWizard: *wizard})
 	if *pause {
 		waitForEnter()
 	}
 	return code
 }
 
-func install(p installPaths, noOCR bool) int {
+// installOptions are the choices install can be run with.
+type installOptions struct {
+	noOCR bool
+	// fromWizard means the Windows setup wizard is driving: it has already
+	// placed the files, and it creates the shortcut and Installed-apps
+	// entry itself afterwards.
+	fromWizard bool
+}
+
+func install(p installPaths, opts installOptions) int {
+	noOCR := opts.noOCR
 	fail := func(format string, a ...any) int {
 		fmt.Printf("\nINSTALLATION FAILED: "+format+"\nNothing above this line was undone; fix the problem and run the installer again.\n", a...)
 		return exitError
@@ -261,10 +273,9 @@ func install(p installPaths, noOCR bool) int {
 	}
 	okf("%s", p.binPath)
 	guiInstalled := false
-	stopRunningLauncher()
 	if src := guiSource(); src != "" {
 		if err := installGUI(src, p.guiPath); err != nil {
-			warnf("could not install the app window launcher (%v); close PrivacyLens if it is open and re-run the installer", err)
+			warnf("could not install the app window launcher (%v); if PrivacyLens is open, click Quit PrivacyLens in its browser tab and run the installer again", err)
 		} else {
 			guiInstalled = true
 			okf("%s", p.guiPath)
@@ -328,7 +339,7 @@ func install(p installPaths, noOCR bool) int {
 		f.Close()
 		okf("findings log: %s", p.logPath)
 	}
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == "windows" && !opts.fromWizard {
 		finishWindowsInstall(p, guiInstalled)
 	}
 	if p.desktopEntry != "" && guiInstalled {
@@ -435,16 +446,6 @@ func secureWindowsDataDir(p installPaths) {
 	}
 }
 
-// stopRunningLauncher ends any running GUI launcher on Windows, where an
-// open program's file cannot be replaced or deleted. The launcher lingers
-// for a few minutes after its browser tab closes, so the user cannot be
-// asked to "close it first" - there is nothing visible to close.
-func stopRunningLauncher() {
-	if runtime.GOOS == "windows" {
-		execCmd("taskkill", "/F", "/IM", "privacylens-gui.exe")
-	}
-}
-
 // removeLegacyBinary deletes the pre-0.9.6 Windows binary from ProgramData
 // once the new one is in Program Files. The copy that is currently running
 // cannot delete itself; it says so instead.
@@ -477,32 +478,16 @@ func finishWindowsInstall(p installPaths, gui bool) {
 	if gui {
 		target, args = p.guiPath, ""
 	}
-	if err := execCmd("powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", shortcutScript(p.shortcut, target, args, p.binDir)); err != nil {
+	if err := createShortcut(p.shortcut, target, args, p.binDir, "Find personal data (PII) stored on this computer"); err != nil {
 		warnf("could not create the Start Menu shortcut (%v)", err)
 	} else {
 		okf("Start Menu shortcut: PrivacyLens")
 	}
-	ok := true
-	for _, v := range uninstallEntryValues(p) {
-		if err := execCmd("reg", "add", uninstallRegKey, "/v", v.name, "/t", v.kind, "/d", v.data, "/f"); err != nil {
-			warnf(`could not register with "Installed apps" (%v)`, err)
-			ok = false
-			break
-		}
-	}
-	if ok {
+	if err := writeUninstallEntry(uninstallEntryValues(p)); err != nil {
+		warnf(`could not register with "Installed apps" (%v)`, err)
+	} else {
 		okf(`listed under Settings > Apps > Installed apps`)
 	}
-}
-
-// psQuote renders s as a PowerShell single-quoted string literal.
-func psQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
-
-// shortcutScript is the PowerShell that writes a .lnk — there is no simpler
-// dependency-free way to create one.
-func shortcutScript(lnk, target, args, workDir string) string {
-	return fmt.Sprintf("$s=(New-Object -ComObject WScript.Shell).CreateShortcut(%s);$s.TargetPath=%s;$s.Arguments=%s;$s.WorkingDirectory=%s;$s.Description=%s;$s.Save()",
-		psQuote(lnk), psQuote(target), psQuote(args), psQuote(workDir), psQuote("Find personal data (PII) stored on this computer"))
 }
 
 type regValue struct{ name, kind, data string }
@@ -595,10 +580,9 @@ func uninstall(p installPaths, purge bool) (cleanup func()) {
 	notef("no more scheduled scans will run")
 
 	steps.step("Removing the program")
-	stopRunningLauncher()
 	if runtime.GOOS == "windows" {
 		gone("Start Menu shortcut", os.Remove(p.shortcut))
-		execCmd("reg", "delete", uninstallRegKey, "/f")
+		deleteUninstallEntry()
 		gone("old copy "+p.legacyBin, os.Remove(p.legacyBin))
 		binDir := p.binDir
 		if _, err := os.Stat(binDir); err == nil {
@@ -1065,7 +1049,7 @@ func removeSchedule(gone func(what string, err error)) {
 		if execCmd("schtasks", "/Query", "/TN", taskName) == nil {
 			gone(`Task Scheduler task "`+taskName+`"`, execCmd("schtasks", "/Delete", "/TN", taskName, "/F"))
 		}
-		execCmd("reg", "delete", envRegKey, "/v", "PRIVACYLENS_DATA_DIR", "/f")
+		deleteMachineEnv("PRIVACYLENS_DATA_DIR")
 	case "darwin":
 		execCmd("launchctl", "bootout", "system", launchdPlistPath)
 		gone("launchd job "+launchdLabel, os.Remove(launchdPlistPath))

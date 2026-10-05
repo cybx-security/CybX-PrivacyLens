@@ -377,7 +377,8 @@ a "what to do next" list. It:
   found the install still succeeds and says what to add manually
 - creates the machine-wide findings log and lets standard users append to it
 - on Windows, adds a **Start Menu shortcut** and an entry under **Settings ›
-  Apps › Installed apps** with a working Uninstall button, and sets
+  Apps › Installed apps** with a working Uninstall button (both written
+  through the Windows API — no PowerShell or `reg.exe` is launched), and sets
   `PRIVACYLENS_DATA_DIR=C:\ProgramData\PrivacyLens` machine-wide so the
   weekly scan's saved reports land somewhere findable
 
@@ -539,6 +540,30 @@ Known gap: the wizard's embedded `Uninstall.exe` is not signed by this
 pipeline (it is generated inside the setup file). It is run from Program
 Files, not downloaded, so it draws no warning; signing it needs a two-pass
 NSIS build.
+
+**Antivirus and unsigned builds.** An unsigned program nobody has seen
+before that installs itself and registers a SYSTEM scheduled task is what a
+dropper looks like, and antivirus behavior monitoring treats it that way.
+In testing on Windows 11, Microsoft Defender flagged an early 0.9.6 build
+as `Behavior:Win32/Persistence.A!ml` about a minute after installation and
+blocked `privacylens.exe` from running — the install had succeeded, but the
+weekly scan would never have run. That build created its Start Menu
+shortcut by launching PowerShell with `-ExecutionPolicy Bypass`; the
+installer now makes the shortcut and registry entries through direct
+Windows API calls (and the setup wizard makes its own), and the same test
+sequence then passed cleanly. That is one machine and one day's Defender
+definitions, not a guarantee. Until releases are signed:
+
+- after installing on a customer machine, run `privacylens status` a few
+  minutes later — if the program has been blocked it will not start at all;
+- a machine whose dashboard shows no `scan_summary` event for over a week
+  has a scan that is not running, whatever the cause;
+- a false positive can be reported to Microsoft at
+  https://www.microsoft.com/wdsi/filesubmission (choose "Software
+  developer"), which clears it for everyone once reviewed.
+
+Signing is the durable fix: it gives the files a publisher identity and a
+reputation that carries across versions.
 
 **Linux** has no platform gatekeeper; publish SHA-256 checksums
 (`shasum -a 256 dist/packages/*`) and optionally a GPG signature.

@@ -136,7 +136,7 @@ func TestInstallStatusUninstall(t *testing.T) {
 		t.Errorf("status before install should report problems:\n%s", before.String())
 	}
 
-	if code := install(p, true); code != exitClean {
+	if code := install(p, installOptions{noOCR: true}); code != exitClean {
 		t.Fatalf("install exit code = %d", code)
 	}
 	for _, f := range []string{p.binPath, p.manifest, p.logPath} {
@@ -153,7 +153,7 @@ func TestInstallStatusUninstall(t *testing.T) {
 	if err := os.WriteFile(p.manifest, custom, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if code := install(p, true); code != exitClean {
+	if code := install(p, installOptions{noOCR: true}); code != exitClean {
 		t.Fatalf("re-install exit code = %d", code)
 	}
 	if got, _ := os.ReadFile(p.manifest); !bytes.Equal(got, custom) {
@@ -251,18 +251,9 @@ func TestCheckAgentConfigs(t *testing.T) {
 	}
 }
 
-// The strings handed to PowerShell and the registry on Windows are built by
-// pure functions so their shape can be checked on any platform.
-func TestWindowsInstallStrings(t *testing.T) {
-	if got := psQuote(`C:\Users\O'Brien`); got != `'C:\Users\O''Brien'` {
-		t.Errorf("psQuote = %s", got)
-	}
-	script := shortcutScript(`C:\Start\PrivacyLens.lnk`, `C:\Program Files\PrivacyLens\privacylens-gui.exe`, "", `C:\Program Files\PrivacyLens`)
-	for _, want := range []string{"CreateShortcut('C:\\Start\\PrivacyLens.lnk')", "$s.TargetPath='C:\\Program Files\\PrivacyLens\\privacylens-gui.exe'", "$s.Arguments=''", "$s.Save()"} {
-		if !bytes.Contains([]byte(script), []byte(want)) {
-			t.Errorf("shortcut script missing %q:\n%s", want, script)
-		}
-	}
+// The Installed-apps entry is built by a pure function so its shape can be
+// checked on any platform.
+func TestUninstallEntryValues(t *testing.T) {
 	p := installPaths{binDir: `C:\Program Files\PrivacyLens`, binPath: `C:\Program Files\PrivacyLens\privacylens.exe`}
 	vals := map[string]string{}
 	for _, v := range uninstallEntryValues(p) {

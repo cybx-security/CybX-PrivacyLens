@@ -1,11 +1,12 @@
 ; PrivacyLens Setup - the Windows setup wizard (NSIS 3).
 ;
 ; The wizard is deliberately thin. It unpacks the program into Program
-; Files and then runs "privacylens.exe install", which does all the real
-; work (scan settings, weekly task, permissions, OCR tools, Start Menu
-; shortcut, Installed-apps entry) and whose output is shown in the details
-; pane. One installer implementation, whether it is reached through this
-; wizard, the zip's double-click script, or an RMM running the command.
+; Files and then runs "privacylens.exe install -wizard", which does the real
+; work (scan settings, weekly task, permissions, OCR tools) and whose output
+; is shown in the details pane; the wizard then adds the Start Menu shortcut
+; and the Installed-apps entry itself. One installer implementation, whether
+; it is reached through this wizard, the zip's double-click script, or an
+; RMM running the command.
 ;
 ; Built by scripts/build-all.sh:
 ;   makensis -DVERSION=0.9.6 -DSRC_AMD64=<dir> -DSRC_ARM64=<dir> \
@@ -131,13 +132,36 @@ Section "-Configure"
     StrCpy $1 " -no-ocr"
   ${EndIf}
   DetailPrint "Setting up PrivacyLens (this can take a few minutes)..."
-  nsExec::ExecToLog '"$INSTDIR\privacylens.exe" install$1'
+  nsExec::ExecToLog '"$INSTDIR\privacylens.exe" install -wizard$1'
   Pop $0
   ${If} $0 != 0
     MessageBox MB_ICONSTOP|MB_OK "Setup could not finish (code $0).$\r$\n$\r$\nThe list in the Setup window shows the step that failed. Fix that and run Setup again - it is safe to repeat." /SD IDOK
     SetErrorLevel 2
     Abort "PrivacyLens setup did not complete."
   ${EndIf}
+
+  ; Start Menu shortcut and Installed-apps entry, created here rather than
+  ; by privacylens.exe (-wizard tells it to leave them alone): from an
+  ; installer these are ordinary; from a freshly installed program shelling
+  ; out to PowerShell and reg.exe they look like malware to antivirus
+  ; behavior monitoring.
+  SetShellVarContext all
+  CreateShortcut "$SMPROGRAMS\PrivacyLens.lnk" "$INSTDIR\privacylens-gui.exe" "" "$INSTDIR\privacylens-gui.exe" 0 SW_SHOWNORMAL "" "Find personal data (PII) stored on this computer"
+  DetailPrint "Start Menu shortcut: PrivacyLens"
+  !define ARP "Software\Microsoft\Windows\CurrentVersion\Uninstall\PrivacyLens"
+  WriteRegStr HKLM "${ARP}" "DisplayName" "PrivacyLens"
+  WriteRegStr HKLM "${ARP}" "DisplayVersion" "${VERSION}"
+  WriteRegStr HKLM "${ARP}" "Publisher" "CybX"
+  WriteRegStr HKLM "${ARP}" "InstallLocation" "$INSTDIR"
+  WriteRegStr HKLM "${ARP}" "DisplayIcon" "$INSTDIR\privacylens.exe"
+  WriteRegStr HKLM "${ARP}" "UninstallString" '"$INSTDIR\Uninstall.exe"'
+  WriteRegStr HKLM "${ARP}" "QuietUninstallString" '"$INSTDIR\Uninstall.exe" /S'
+  WriteRegDWORD HKLM "${ARP}" "NoModify" 1
+  WriteRegDWORD HKLM "${ARP}" "NoRepair" 1
+  ${GetSize} "$INSTDIR" "/S=0K" $0 $1 $2
+  IntFmt $0 "0x%08X" $0
+  WriteRegDWORD HKLM "${ARP}" "EstimatedSize" "$0"
+  DetailPrint "Listed under Settings > Apps > Installed apps"
 SectionEnd
 
 ; After the sections: it refers to ${SecOCR}, which exists only once the
@@ -194,4 +218,8 @@ Section "Uninstall"
   Delete "$INSTDIR\PrivacyLens User Guide.docx"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir "$INSTDIR"
+  ; Normally already gone ("privacylens uninstall" removes both); repeated
+  ; here in case the program itself could not run.
+  Delete "$SMPROGRAMS\PrivacyLens.lnk"
+  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\PrivacyLens"
 SectionEnd
