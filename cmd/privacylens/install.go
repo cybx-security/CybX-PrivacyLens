@@ -525,6 +525,9 @@ func runUninstall(args []string) int {
 	fset := flag.NewFlagSet("uninstall", flag.ExitOnError)
 	purge := fset.Bool("purge", false, "also delete the scan settings, saved reports, and the findings log")
 	pause := fset.Bool("pause", false, "wait for Enter before exiting (for double-click uninstalls)")
+	// -wizard is passed by the setup wizard's uninstaller, which deletes
+	// the program folder itself once this command returns.
+	wizard := fset.Bool("wizard", false, "internal: called from the setup wizard's uninstaller")
 	fset.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Usage:
   privacylens uninstall [-purge] [-pause]
@@ -547,6 +550,12 @@ Flags:
 	}
 	p := resolveInstallPaths()
 	cleanup := uninstall(p, *purge)
+	if *wizard {
+		// The helper that removes the folder after exit must not run here:
+		// while it waits, it keeps the wizard's Uninstall.exe from being
+		// deleted, leaving that one file behind in an otherwise empty folder.
+		cleanup = nil
+	}
 	if *pause {
 		waitForEnter()
 	}

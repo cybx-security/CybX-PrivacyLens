@@ -207,7 +207,7 @@ Section "Uninstall"
   !insertmacro StopApp
   ; Removes the weekly task, the shortcut, the Installed-apps entry, and
   ; (with -purge) the data folder.
-  nsExec::ExecToLog '"$INSTDIR\privacylens.exe" uninstall$Purge'
+  nsExec::ExecToLog '"$INSTDIR\privacylens.exe" uninstall -wizard$Purge'
   Pop $0
   ; Only files Setup put here are deleted, and the folder only if that
   ; leaves it empty.
@@ -217,6 +217,19 @@ Section "Uninstall"
   Delete "$INSTDIR\privacylens-gui.exe.new"
   Delete "$INSTDIR\PrivacyLens User Guide.docx"
   Delete "$INSTDIR\Uninstall.exe"
+  ; On Windows 11, Uninstall.exe stays locked for as long as this temporary
+  ; copy of it is running (it cannot be deleted even though the original
+  ; process has exited), which would leave one stray file in an otherwise
+  ; empty folder. A locked program file can still be renamed, so move it
+  ; out to the temp folder and let Windows delete it there at the next
+  ; restart. (Deleting it in place at restart is not safe: a reinstall
+  ; before then would lose its new uninstaller.)
+  ${If} ${FileExists} "$INSTDIR\Uninstall.exe"
+    GetTempFileName $2
+    Delete $2
+    Rename "$INSTDIR\Uninstall.exe" $2
+    Delete /REBOOTOK $2
+  ${EndIf}
   RMDir "$INSTDIR"
   ; Normally already gone ("privacylens uninstall" removes both); repeated
   ; here in case the program itself could not run.
