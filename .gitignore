@@ -4,6 +4,8 @@
 *.html
 # ...except the GUI page, which is compiled into the binary (go:embed).
 !/internal/gui/static/index.html
+# ...and the macOS installer's wizard pages.
+!/packaging/macos/pkg/*.html
 *.json.report
 report.json
 report.csv
