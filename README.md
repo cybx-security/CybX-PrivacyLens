@@ -399,12 +399,12 @@ calls the old `C:\ProgramData\PrivacyLens\privacylens.exe` path, update it.
 is it scanning, are findings reaching Insights?" in plain language:
 
 ```
-PrivacyLens 0.9.6 — status of this computer
+PrivacyLens 0.9.7 - status of this computer
 
   ok   Program        C:\Program Files\PrivacyLens\privacylens.exe
-  ok   Scan settings  C:\ProgramData\PrivacyLens\scan.json — scans: C:\Users
+  ok   Scan settings  C:\ProgramData\PrivacyLens\scan.json - scans: C:\Users
   ok   Weekly scan    scheduled, Sundays 02:00 (Task Scheduler task "PrivacyLens Scan", runs as SYSTEM)
-  ok   Last scan      Sun Oct 4 2026 02:07 (31 h ago) — 12 finding(s) in 4210 file(s)
+  ok   Last scan      Sun Oct 4 2026 02:07 (31 h ago) - 12 finding(s) in 4210 file(s)
   ok   Findings log   C:\ProgramData\PrivacyLens\logs\findings.json
   ok   OCR            ready (images and scanned PDFs)
   ok   Insights       agent installed and watching the findings log
