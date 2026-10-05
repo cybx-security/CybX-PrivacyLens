@@ -124,11 +124,13 @@ type Stats struct {
 	FilesSkipped int      `json:"files_skipped"`
 	FilesNeedOCR int      `json:"files_need_ocr"`
 	FilesCloud   int      `json:"files_cloud_skipped"`
-	FilesMail    int      `json:"files_mail_skipped"` // mail stores seen but NOT searched (run a MailOnly scan)
+	FilesMail    int      `json:"files_mail_skipped"`    // mail stores seen but NOT searched (run a MailOnly scan)
+	FilesDocs    int      `json:"files_unreadable_docs"` // documents in formats that cannot be opened (.doc, .xls, .msg, …)
 	FilesErrored int      `json:"files_errored"`
-	NeedOCR      []string `json:"need_ocr_files,omitempty"`      // image-only documents that were NOT searched
-	CloudSkipped []string `json:"cloud_skipped_files,omitempty"` // cloud placeholders that were NOT searched
-	MailSkipped  []string `json:"mail_store_files,omitempty"`    // mail stores that were NOT searched
+	NeedOCR      []string `json:"need_ocr_files,omitempty"`       // image-only documents that were NOT searched
+	CloudSkipped []string `json:"cloud_skipped_files,omitempty"`  // cloud placeholders that were NOT searched
+	MailSkipped  []string `json:"mail_store_files,omitempty"`     // mail stores that were NOT searched
+	UnreadDocs   []string `json:"unreadable_doc_files,omitempty"` // unsupported-format documents that were NOT searched
 	Errors       []string `json:"errors,omitempty"`
 }
 
@@ -138,6 +140,7 @@ type fileResult struct {
 	needsOCR  bool
 	cloud     bool
 	mailStore bool  // a .pst/.ost seen outside a MailOnly scan
+	unreadDoc bool  // a document in a format the scanner cannot open
 	warn      error // partial-read problem on a file that still produced results
 	ocr       bool  // scanned via OCR
 	err       error
@@ -303,6 +306,9 @@ func ScanContext(ctx context.Context, roots []string, opts Options) ([]Finding, 
 		case r.mailStore:
 			stats.FilesMail++
 			stats.MailSkipped = append(stats.MailSkipped, r.path)
+		case r.unreadDoc:
+			stats.FilesDocs++
+			stats.UnreadDocs = append(stats.UnreadDocs, r.path)
 		case r.skipped:
 			stats.FilesSkipped++
 		default:
@@ -329,6 +335,7 @@ func ScanContext(ctx context.Context, roots []string, opts Options) ([]Finding, 
 	sort.Strings(stats.NeedOCR)
 	sort.Strings(stats.CloudSkipped)
 	sort.Strings(stats.MailSkipped)
+	sort.Strings(stats.UnreadDocs)
 
 	sort.Slice(findings, func(i, j int) bool {
 		if findings[i].Path != findings[j].Path {
@@ -494,6 +501,8 @@ func scanFileContext(ctx context.Context, path string, opts Options, selfExe os.
 		return fileResult{path: path, skipped: true}
 	case extract.StatusNeedsOCR:
 		return fileResult{path: path, needsOCR: true}
+	case extract.StatusUnreadableDoc:
+		return fileResult{path: path, unreadDoc: true}
 	}
 	viaOCR := status == extract.StatusOCR
 

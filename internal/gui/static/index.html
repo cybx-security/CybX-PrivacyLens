@@ -321,6 +321,9 @@
       ((s.files_mail_skipped || 0) > 0
         ? '<div class="card"><div class="num" style="color:var(--medium)">' + s.files_mail_skipped + '</div><div class="label">Mail stores (not searched)</div></div>'
         : '') +
+      ((s.files_unreadable_docs || 0) > 0
+        ? '<div class="card"><div class="num" style="color:var(--medium)">' + s.files_unreadable_docs + '</div><div class="label">Unreadable documents (not searched)</div></div>'
+        : '') +
       catNames.map(function (c) {
         return '<div class="card"><div class="num">' + byCat[c] + '</div><div class="label">' + esc(c) + '</div></div>';
       }).join('');
@@ -330,7 +333,7 @@
 
     if (!lastFindings.length) {
 	      var gaps = (s.files_need_ocr || 0) + (s.files_cloud_skipped || 0) +
-	        (s.files_mail_skipped || 0) + (s.files_errored || 0);
+	        (s.files_mail_skipped || 0) + (s.files_unreadable_docs || 0) + (s.files_errored || 0);
 	      docs.innerHTML = '<div class="empty">No PII matches found in searched content.' +
 	        (gaps ? ' Review the coverage gaps below before treating this scan as clean.' : '') + '</div>';
     } else {
@@ -401,6 +404,13 @@
         ' Outlook mail store(s) were NOT searched</strong> — mailbox files (.pst/.ost) are only opened by a targeted mail scan (tick “Mail scan” and re-run):' +
         '<ul style="margin:8px 0 0;padding-left:20px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px">' +
         mailFiles.map(function (f) { return '<li>' + esc(f) + '</li>'; }).join('') + '</ul>');
+    }
+    var docFiles = (rep.stats && rep.stats.unreadable_doc_files) || [];
+    if (docFiles.length) {
+      notices.push('<strong>' + docFiles.length +
+        ' document(s) were NOT searched</strong> — they are in formats PrivacyLens cannot open (old-style .doc/.xls/.ppt, Outlook .msg, OpenDocument). Re-save them as .docx, .xlsx, or PDF to include them:' +
+        '<ul style="margin:8px 0 0;padding-left:20px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px">' +
+        docFiles.map(function (f) { return '<li>' + esc(f) + '</li>'; }).join('') + '</ul>');
     }
     if (notices.length) {
       ocrNotice.innerHTML = notices.join('<div style="margin-top:10px"></div>');

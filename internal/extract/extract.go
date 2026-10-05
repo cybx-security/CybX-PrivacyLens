@@ -29,7 +29,22 @@ const (
 	// Kept distinct from StatusOK so findings can be tagged as OCR-sourced
 	// (OCR misreads characters; consumers may weight these differently).
 	StatusOCR
+	// StatusUnreadableDoc means the file is a document in a format this
+	// scanner cannot open (legacy binary Office, OpenDocument, Outlook
+	// .msg, …). Distinct from StatusUnsupported so these are surfaced as a
+	// coverage gap: unlike a .dll or a .jpg, they plausibly hold PII.
+	StatusUnreadableDoc
 )
+
+// unreadableDocExts are document formats that routinely hold PII but that
+// PrivacyLens cannot parse. They are listed in reports as NOT searched
+// rather than silently folded into the skipped count.
+var unreadableDocExts = map[string]bool{
+	".doc": true, ".dot": true, ".xls": true, ".xlsb": true, ".xlt": true,
+	".ppt": true, ".pps": true, ".odt": true, ".ods": true, ".odp": true,
+	".msg": true, ".pages": true, ".numbers": true, ".key": true,
+	".wpd": true, ".wps": true, ".one": true, ".mdb": true, ".accdb": true,
+}
 
 // imageExts are raster formats OCR can read directly (when enabled).
 var imageExts = map[string]bool{
@@ -56,7 +71,7 @@ var skipExts = map[string]bool{
 	".iso": true, ".exe": true, ".dll": true, ".so": true, ".dylib": true,
 	".bin": true, ".dat": true, ".db": true, ".sqlite": true, ".class": true,
 	".pyc": true, ".o": true, ".a": true, ".woff": true, ".woff2": true,
-	".ttf": true, ".otf": true, ".doc": true, ".xls": true, ".ppt": true,
+	".ttf": true, ".otf": true,
 }
 
 // FromFile extracts text from path. The Status tells the caller whether the
@@ -106,6 +121,9 @@ func FromFile(path string) (text string, status Status, err error) {
 			return "", StatusOK, err
 		}
 		return text, StatusOCR, nil
+	}
+	if unreadableDocExts[ext] {
+		return "", StatusUnreadableDoc, nil
 	}
 	if skipExts[ext] {
 		return "", StatusUnsupported, nil

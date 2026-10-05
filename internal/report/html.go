@@ -76,6 +76,9 @@ var htmlTmpl = template.Must(template.New("report").Parse(`<!DOCTYPE html>
     {{if .Stats.FilesNeedOCR}}
     <div class="card ocr"><div class="num">{{.Stats.FilesNeedOCR}}</div><div class="label">Need OCR (not searched)</div></div>
     {{end}}
+    {{if .Stats.FilesDocs}}
+    <div class="card ocr"><div class="num">{{.Stats.FilesDocs}}</div><div class="label">Unreadable documents (not searched)</div></div>
+    {{end}}
     {{range .CategoryCounts}}
     <div class="card"><div class="num">{{.Count}}</div><div class="label">{{.Category}}</div></div>
     {{end}}
@@ -138,6 +141,13 @@ var htmlTmpl = template.Must(template.New("report").Parse(`<!DOCTYPE html>
   files (.pst/.ost) are only opened by a targeted mail scan (<code>privacylens -mail</code>, or the
   "Mail scan" option in the GUI):
     <ul>{{range .Stats.MailSkipped}}<li>{{.}}</li>{{end}}</ul>
+  </div>
+  {{end}}
+  {{if .Stats.UnreadDocs}}
+  <div class="notice ocr"><strong>{{.Stats.FilesDocs}} document(s) were NOT searched</strong> — they are in formats
+  PrivacyLens cannot open (old-style .doc/.xls/.ppt, Outlook .msg, OpenDocument, and similar). Re-save them as
+  .docx, .xlsx, or PDF to include them, or review them by hand:
+    <ul>{{range .Stats.UnreadDocs}}<li>{{.}}</li>{{end}}</ul>
   </div>
   {{end}}
 </main>

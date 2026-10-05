@@ -543,3 +543,20 @@ func TestContextSnippetKeepsRunesWhole(t *testing.T) {
 		}
 	}
 }
+
+// Documents in formats the scanner cannot open are listed as a coverage gap,
+// not folded into the anonymous skipped count.
+func TestUnreadableDocsReported(t *testing.T) {
+	t.Setenv("PRIVACYLENS_DATA_DIR", t.TempDir())
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "old-payroll.XLS"), "\xd0\xcf\x11\xe0binary")
+	writeFile(t, filepath.Join(root, "letter.doc"), "\xd0\xcf\x11\xe0binary")
+	writeFile(t, filepath.Join(root, "photo.gif"), "GIF89a")
+	_, stats, err := Scan([]string{root}, Options{Workers: 1, MaxSizeBytes: 1 << 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.FilesDocs != 2 || len(stats.UnreadDocs) != 2 || stats.FilesSkipped != 1 {
+		t.Errorf("unreadable docs = %d (%v), skipped = %d; want 2 and 1", stats.FilesDocs, stats.UnreadDocs, stats.FilesSkipped)
+	}
+}

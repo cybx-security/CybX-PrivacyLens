@@ -264,6 +264,9 @@ func PrintConsole(w io.Writer, r *Report, verbose bool) {
 	if n := r.Stats.FilesMail; n > 0 {
 		fmt.Fprintf(w, "Outlook mail stores NOT searched: %d (.pst/.ost; run privacylens -mail to scan mailboxes)\n", n)
 	}
+	if n := r.Stats.FilesDocs; n > 0 {
+		fmt.Fprintf(w, "Documents NOT searched: %d in formats PrivacyLens cannot open (old .doc/.xls/.ppt, .msg, OpenDocument…); re-save as .docx/.xlsx/.pdf to scan them (-verbose lists them)\n", n)
+	}
 	fmt.Fprintf(w, "Findings: %d across %d files\n", len(r.Findings), r.filesWithFindings())
 
 	if len(r.Findings) > 0 {
@@ -307,6 +310,13 @@ func PrintConsole(w io.Writer, r *Report, verbose bool) {
 	if verbose && len(r.Stats.CloudSkipped) > 0 {
 		fmt.Fprintf(w, "\nCloud-only files not searched:\n")
 		for _, p := range r.Stats.CloudSkipped {
+			fmt.Fprintf(w, "  %s\n", p)
+		}
+	}
+
+	if verbose && len(r.Stats.UnreadDocs) > 0 {
+		fmt.Fprintf(w, "\nDocuments not searched (unsupported format):\n")
+		for _, p := range r.Stats.UnreadDocs {
 			fmt.Fprintf(w, "  %s\n", p)
 		}
 	}

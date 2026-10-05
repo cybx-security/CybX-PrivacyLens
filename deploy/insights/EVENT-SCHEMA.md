@@ -77,6 +77,11 @@ has a broken/missing scan schedule.
 `roots` (string array), `duration` (Go duration string, e.g. `4.2s`),
 `findings`, `files_scanned`, `files_skipped`, `files_need_ocr`,
 `files_ocr` (documents read via OCR, 0.9.0+), `files_errored` (ints).
+Coverage-gap counters, all ints: `files_cloud_skipped` (cloud placeholders
+not downloaded), `files_mail_skipped` (Outlook stores seen outside a mail
+scan), and `files_unreadable_docs` (0.9.6+: documents in formats the scanner
+cannot open — old `.doc`/`.xls`/`.ppt`, `.msg`, OpenDocument). Nonzero means
+content exists on the host that this scan did not search.
 
 ## 3. Categories (`category` ↔ `category_id`)
 

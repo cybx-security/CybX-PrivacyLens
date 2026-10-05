@@ -116,7 +116,7 @@ func summaryLine(format string, r *Report, ts, hostname string) (string, error) 
 		FilesScanned: r.Stats.FilesScanned, FilesSkipped: r.Stats.FilesSkipped,
 		FilesNeedOCR: r.Stats.FilesNeedOCR, FilesOCR: r.Stats.FilesOCR,
 		FilesCloud: r.Stats.FilesCloud, FilesMail: r.Stats.FilesMail,
-		FilesErrored: r.Stats.FilesErrored,
+		FilesDocs: r.Stats.FilesDocs, FilesErrored: r.Stats.FilesErrored,
 	})
 	return string(b), err
 }
@@ -193,7 +193,10 @@ type summaryRecord struct {
 	FilesCloud int `json:"files_cloud_skipped"`
 	// FilesMail counts Outlook stores (.pst/.ost) seen but not opened;
 	// nonzero means mailboxes exist that only a -mail scan will cover.
-	FilesMail    int `json:"files_mail_skipped"`
+	FilesMail int `json:"files_mail_skipped"`
+	// FilesDocs counts documents in formats the scanner cannot open (old
+	// .doc/.xls/.ppt, .msg, OpenDocument…) — present but never searched.
+	FilesDocs    int `json:"files_unreadable_docs"`
 	FilesErrored int `json:"files_errored"`
 }
 
@@ -274,8 +277,8 @@ func cefSummaryLine(r *Report) string {
 		fmt.Sprintf("cn1Label=findings cn1=%d", len(r.Findings)),
 		fmt.Sprintf("cn2Label=filesScanned cn2=%d", r.Stats.FilesScanned),
 		fmt.Sprintf("cn3Label=filesNeedOcr cn3=%d", r.Stats.FilesNeedOCR),
-		"msg=" + cefExt(fmt.Sprintf("roots: %s; duration %s; skipped %d; cloud-skipped %d; mail-stores-skipped %d; unreadable %d",
-			strings.Join(r.Roots, ", "), r.Duration, r.Stats.FilesSkipped, r.Stats.FilesCloud, r.Stats.FilesMail, r.Stats.FilesErrored)),
+		"msg=" + cefExt(fmt.Sprintf("roots: %s; duration %s; skipped %d; cloud-skipped %d; mail-stores-skipped %d; unreadable-docs %d; unreadable %d",
+			strings.Join(r.Roots, ", "), r.Duration, r.Stats.FilesSkipped, r.Stats.FilesCloud, r.Stats.FilesMail, r.Stats.FilesDocs, r.Stats.FilesErrored)),
 	}, " ")
 	return fmt.Sprintf("CEF:0|%s|%s|%s|scan-summary|PII scan completed|3|%s",
 		cefHdr(cefVendor), cefHdr(r.Tool), cefHdr(r.Version), ext)
