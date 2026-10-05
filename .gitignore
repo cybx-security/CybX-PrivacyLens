@@ -9,3 +9,4 @@ report.json
 report.csv
 .DS_Store
 .claude/settings.local.json
+rsrc_windows_*.syso

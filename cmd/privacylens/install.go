@@ -40,6 +40,7 @@ import (
 const (
 	taskName           = "PrivacyLens Scan"
 	launchdLabel       = "com.cybx.privacylens"
+	macPkgID           = "com.cybx.privacylens.pkg"
 	launchdPlistPath   = "/Library/LaunchDaemons/com.cybx.privacylens.plist"
 	systemdServicePath = "/etc/systemd/system/privacylens.service"
 	systemdTimerPath   = "/etc/systemd/system/privacylens.timer"
@@ -137,6 +138,11 @@ func guiSource() string {
 	return src
 }
 
+// Everything the installer, uninstaller, and status commands print is plain
+// ASCII on purpose: their output is often captured rather than shown in a
+// console (the Windows setup wizard's details pane, the macOS package log,
+// RMM tools), and those captures routinely mangle anything else.
+
 // stepPrinter numbers the installer's stages so anyone watching can tell
 // what is happening and how far along it is.
 type stepPrinter struct{ n, total int }
@@ -154,7 +160,7 @@ func warnf(format string, a ...any) { fmt.Printf("      WARN  "+format+"\n", a..
 // (a double-clicked installer, an elevated relaunch) open until the user
 // has read the result.
 func waitForEnter() {
-	fmt.Print("\nPress Enter to close this window…")
+	fmt.Print("\nPress Enter to close this window...")
 	bufio.NewReader(os.Stdin).ReadString('\n')
 }
 
@@ -170,7 +176,7 @@ func elevatedOrRelaunch(sub string, args []string) (proceed bool, code int) {
 		fmt.Fprintf(os.Stderr, "error: %s needs administrator rights. Run it with sudo:\n\n  sudo privacylens %s\n", sub, strings.Join(append([]string{sub}, args...), " "))
 		return false, exitError
 	}
-	fmt.Printf("PrivacyLens %s needs administrator permission.\nApprove the Windows prompt — the %s continues in a new window.\n", sub, sub)
+	fmt.Printf("PrivacyLens %s needs administrator permission.\nApprove the Windows prompt - the %s continues in a new window.\n", sub, sub)
 	relaunch := append([]string{sub}, args...)
 	if !hasFlag(args, "pause") {
 		relaunch = append(relaunch, "-pause") // the new window would vanish on completion
@@ -200,8 +206,8 @@ func runInstall(args []string) int {
   privacylens install [-no-ocr] [-pause]
 
 Installs PrivacyLens for every user of this computer: the program, a starter
-scan manifest, the weekly scheduled scan (Sundays 02:00), and — unless
--no-ocr is given — the OCR tools via the system package manager. Needs
+scan manifest, the weekly scheduled scan (Sundays 02:00), and - unless
+-no-ocr is given - the OCR tools via the system package manager. Needs
 administrator rights: on Windows it asks for them itself; on Linux and
 macOS run it with sudo. Safe to re-run: it upgrades in place and never
 overwrites an existing manifest.
@@ -235,7 +241,7 @@ func install(p installPaths, noOCR bool) int {
 		_, statErr = os.Stat(p.legacyBin)
 		upgrade = statErr == nil
 	}
-	fmt.Printf("%s %s — installer\n", toolName, version)
+	fmt.Printf("%s %s - installer\n", toolName, version)
 	if upgrade {
 		fmt.Println("An existing installation was found; it will be updated in place.")
 	}
@@ -255,6 +261,7 @@ func install(p installPaths, noOCR bool) int {
 	}
 	okf("%s", p.binPath)
 	guiInstalled := false
+	stopRunningLauncher()
 	if src := guiSource(); src != "" {
 		if err := installGUI(src, p.guiPath); err != nil {
 			warnf("could not install the app window launcher (%v); close PrivacyLens if it is open and re-run the installer", err)
@@ -263,6 +270,11 @@ func install(p installPaths, noOCR bool) int {
 			okf("%s", p.guiPath)
 		}
 	}
+	if !guiInstalled {
+		// A native package (setup wizard, .pkg) puts the launcher in place
+		// itself before calling this installer.
+		guiInstalled = fileExists(p.guiPath)
+	}
 	removeLegacyBinary(p)
 
 	// OCR tools before the manifest, so a fresh manifest can enable OCR
@@ -270,7 +282,14 @@ func install(p installPaths, noOCR bool) int {
 	steps.step("Setting up OCR (reads scanned documents and images)")
 	ocrReady := false
 	if noOCR {
-		notef("skipped (-no-ocr); scanned documents will be listed as needing OCR")
+		// Not installing is not the same as not having: use tools that are
+		// already here.
+		if img, pdf := extract.HaveOCR(); img && pdf {
+			ocrReady = true
+			okf("already installed (tesseract + pdftoppm)")
+		} else {
+			notef("not installed (-no-ocr); scanned documents will be listed as needing OCR")
+		}
 	} else {
 		ocrReady = installOCRTools()
 	}
@@ -284,7 +303,7 @@ func install(p installPaths, noOCR bool) int {
 	} else {
 		okf("%s (existing settings kept)", p.manifest)
 		if ocrReady {
-			notef(`OCR tools are ready — set "ocr": true in that file to read scanned documents`)
+			notef(`OCR tools are ready - set "ocr": true in that file to read scanned documents`)
 		}
 	}
 	scanRoots := "(could not read the settings file)"
@@ -373,11 +392,11 @@ func ocrSummary(skipped bool) string {
 	case img && pdf:
 		return "ready (images and scanned PDFs)"
 	case img:
-		return "images only — scanned PDFs need poppler (pdftoppm)"
+		return "images only - scanned PDFs need poppler (pdftoppm)"
 	case skipped:
 		return "not installed (skipped)"
 	}
-	return "not available — scanned documents are listed as needing OCR"
+	return "not available - scanned documents are listed as needing OCR"
 }
 
 func scheduleName() string {
@@ -413,6 +432,16 @@ func secureWindowsDataDir(p installPaths) {
 	// rights would let any user delete or rewrite SIEM evidence.
 	if err := execCmd("icacls", p.logDir, "/grant", "*S-1-5-32-545:(OI)(CI)(AD,RA,REA,WEA,WA,S)"); err != nil {
 		warnf("could not let standard users write to %s (%v); their scans will fall back to per-user logs", p.logDir, err)
+	}
+}
+
+// stopRunningLauncher ends any running GUI launcher on Windows, where an
+// open program's file cannot be replaced or deleted. The launcher lingers
+// for a few minutes after its browser tab closes, so the user cannot be
+// asked to "close it first" - there is nothing visible to close.
+func stopRunningLauncher() {
+	if runtime.GOOS == "windows" {
+		execCmd("taskkill", "/F", "/IM", "privacylens-gui.exe")
 	}
 }
 
@@ -482,16 +511,29 @@ type regValue struct{ name, kind, data string }
 // apps" list. The uninstall command pauses at the end because Windows runs
 // it in a console window of its own.
 func uninstallEntryValues(p installPaths) []regValue {
-	return []regValue{
+	uninstall := `"` + p.binPath + `" uninstall -pause`
+	var quiet []regValue
+	// The setup wizard leaves its own graphical uninstaller beside the
+	// program; when present, that is what the Uninstall button should run.
+	if wizard := filepath.Join(p.binDir, "Uninstall.exe"); fileExists(wizard) {
+		uninstall = `"` + wizard + `"`
+		quiet = []regValue{{"QuietUninstallString", "REG_SZ", `"` + wizard + `" /S`}}
+	}
+	return append(quiet, []regValue{
 		{"DisplayName", "REG_SZ", toolName},
 		{"DisplayVersion", "REG_SZ", version},
 		{"Publisher", "REG_SZ", "CybX"},
 		{"InstallLocation", "REG_SZ", p.binDir},
 		{"DisplayIcon", "REG_SZ", p.binPath},
-		{"UninstallString", "REG_SZ", `"` + p.binPath + `" uninstall -pause`},
+		{"UninstallString", "REG_SZ", uninstall},
 		{"NoModify", "REG_DWORD", "1"},
 		{"NoRepair", "REG_DWORD", "1"},
-	}
+	}...)
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func runUninstall(args []string) int {
@@ -535,7 +577,7 @@ Flags:
 // uninstall removes the installation and returns an optional final action
 // to run just before the process exits.
 func uninstall(p installPaths, purge bool) (cleanup func()) {
-	fmt.Printf("%s %s — uninstaller\n", toolName, version)
+	fmt.Printf("%s %s - uninstaller\n", toolName, version)
 	steps := &stepPrinter{total: 3}
 	// gone reports a removal, treating "was never there" as nothing to say.
 	gone := func(what string, err error) {
@@ -553,6 +595,7 @@ func uninstall(p installPaths, purge bool) (cleanup func()) {
 	notef("no more scheduled scans will run")
 
 	steps.step("Removing the program")
+	stopRunningLauncher()
 	if runtime.GOOS == "windows" {
 		gone("Start Menu shortcut", os.Remove(p.shortcut))
 		execCmd("reg", "delete", uninstallRegKey, "/f")
@@ -568,6 +611,7 @@ func uninstall(p installPaths, purge bool) (cleanup func()) {
 		}
 	} else {
 		if runtime.GOOS == "darwin" {
+			execCmd("pkgutil", "--forget", macPkgID) // receipt of the .pkg installer, if that is how it arrived
 			gone(p.guiPath, removeAllIfExists(p.guiPath))
 		} else {
 			gone(p.guiPath, os.Remove(p.guiPath))
@@ -780,7 +824,7 @@ func installOCRTools() bool {
 		okf("already installed (tesseract + pdftoppm)")
 		return true
 	}
-	notef("installing Tesseract and poppler — this can take a few minutes…")
+	notef("installing Tesseract and poppler - this can take a few minutes...")
 	switch runtime.GOOS {
 	case "windows":
 		// Refresh the community source first, and pin every query to it:
@@ -827,9 +871,9 @@ func installOCRTools() bool {
 	case img && pdf:
 		okf("ready (images and scanned PDFs)")
 	case img:
-		warnf("Tesseract is ready but pdftoppm is missing — images will be read, scanned PDFs will only be flagged")
+		warnf("Tesseract is ready but pdftoppm is missing - images will be read, scanned PDFs will only be flagged")
 	default:
-		warnf("OCR tools could not be installed — scans still work; scanned documents are listed as needing OCR")
+		warnf("OCR tools could not be installed - scans still work; scanned documents are listed as needing OCR")
 		if runtime.GOOS == "windows" {
 			notef("to add OCR manually:")
 			notef("  1. Tesseract: run the installer from https://github.com/UB-Mannheim/tesseract/wiki")
@@ -858,14 +902,14 @@ const (
 // runs it silently (NSIS /S). Installs to the standard Program Files
 // location, which the scanner auto-detects.
 func installTesseractDirect() bool {
-	notef("package managers unavailable — downloading the official Tesseract installer (48 MB)…")
+	notef("package managers unavailable - downloading the official Tesseract installer (48 MB)...")
 	tmp := filepath.Join(os.TempDir(), "privacylens-tesseract-setup.exe")
 	if err := downloadVerified(tesseractSetupURL, tesseractSetupSHA, tmp); err != nil {
 		warnf("Tesseract download failed: %v", err)
 		return false
 	}
 	defer os.Remove(tmp)
-	notef("running the Tesseract installer (silent)…")
+	notef("running the Tesseract installer (silent)...")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	if err := exec.CommandContext(ctx, tmp, "/S").Run(); err != nil {
@@ -879,7 +923,7 @@ func installTesseractDirect() bool {
 // and unpacks it under Program Files\poppler, where the scanner auto-detects
 // pdftoppm (zip releases are not installers and never end up on PATH).
 func installPopplerDirect() bool {
-	notef("package managers unavailable — downloading the official poppler release (16 MB)…")
+	notef("package managers unavailable - downloading the official poppler release (16 MB)...")
 	tmp := filepath.Join(os.TempDir(), "privacylens-poppler.zip")
 	if err := downloadVerified(popplerZipURL, popplerZipSHA, tmp); err != nil {
 		warnf("poppler download failed: %v", err)
@@ -925,7 +969,7 @@ func downloadVerified(url, wantSHA, dst string) error {
 	}
 	if got := hex.EncodeToString(h.Sum(nil)); got != wantSHA {
 		os.Remove(dst)
-		return fmt.Errorf("checksum mismatch (got %s, want %s) — refusing to use the download", got, wantSHA)
+		return fmt.Errorf("checksum mismatch (got %s, want %s) - refusing to use the download", got, wantSHA)
 	}
 	return nil
 }

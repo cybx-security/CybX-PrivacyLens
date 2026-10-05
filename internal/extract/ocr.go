@@ -89,6 +89,10 @@ func tesseractBin() string {
 			tesseractPath = p
 			return
 		}
+		if p := findInToolDirs("tesseract"); p != "" {
+			tesseractPath = p
+			return
+		}
 		if runtime.GOOS == "windows" {
 			for _, p := range []string{
 				`C:\Program Files\Tesseract-OCR\tesseract.exe`,
@@ -118,6 +122,10 @@ func pdftoppmBin() string {
 			pdftoppmPath = p
 			return
 		}
+		if p := findInToolDirs("pdftoppm"); p != "" {
+			pdftoppmPath = p
+			return
+		}
 		if runtime.GOOS == "windows" {
 			// "poppler*" also catches versioned sibling installs like
 			// C:\Program Files\poppler-24.08.0.
@@ -130,6 +138,26 @@ func pdftoppmBin() string {
 		}
 	})
 	return pdftoppmPath
+}
+
+// toolDirs are where package managers put OCR tools on Unix systems. They
+// are searched after PATH because the scheduled scan - a launchd daemon or
+// systemd service - runs with a minimal PATH that leaves out Homebrew
+// (/opt/homebrew/bin, /usr/local/bin) and MacPorts (/opt/local/bin): tools
+// found fine from a terminal would be "missing" every Sunday night.
+var toolDirs = []string{"/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin"}
+
+func findInToolDirs(name string) string {
+	if runtime.GOOS == "windows" {
+		return ""
+	}
+	for _, dir := range toolDirs {
+		p := filepath.Join(dir, name)
+		if fi, err := os.Stat(p); err == nil && !fi.IsDir() && fi.Mode().Perm()&0o111 != 0 {
+			return p
+		}
+	}
+	return ""
 }
 
 // findExecUnder searches each dir recursively (depth-capped) for exeName

@@ -56,7 +56,7 @@ func checkAgentConfigs(configs []string, logPath string) agentState {
 		}
 		return agentState{found: true, summary: "agent installed but NOT watching the findings log yet"}
 	}
-	return agentState{summary: "no agent on this computer — findings stay in the local log"}
+	return agentState{summary: "no agent on this computer - findings stay in the local log"}
 }
 
 // lastScan is the most recent scan_summary event in a findings log.
@@ -131,22 +131,22 @@ func status(p installPaths, w io.Writer) int {
 	}
 	info := func(label, detail string) { fmt.Fprintf(w, "  --   %-14s %s\n", label, detail) }
 
-	fmt.Fprintf(w, "%s %s — status of this computer\n\n", toolName, version)
+	fmt.Fprintf(w, "%s %s - status of this computer\n\n", toolName, version)
 
 	if _, err := os.Stat(p.binPath); err != nil {
-		row(false, "Program", "not installed at "+p.binPath+" — run: privacylens install")
+		row(false, "Program", "not installed at "+p.binPath+" - run: privacylens install")
 	} else {
 		row(true, "Program", p.binPath)
 	}
 	if p.legacyBin != "" {
 		if _, err := os.Stat(p.legacyBin); err == nil {
-			row(false, "Old copy", p.legacyBin+" is left over from an older version — re-run: privacylens install")
+			row(false, "Old copy", p.legacyBin+" is left over from an older version - re-run: privacylens install")
 		}
 	}
 
 	if cfg, err := loadConfig(p.manifest); err != nil {
 		if os.IsNotExist(unwrapAll(err)) {
-			row(false, "Scan settings", "missing: "+p.manifest+" — run: privacylens install")
+			row(false, "Scan settings", "missing: "+p.manifest+" - run: privacylens install")
 		} else {
 			row(false, "Scan settings", fmt.Sprintf("%s has a problem: %v", p.manifest, err))
 		}
@@ -157,7 +157,7 @@ func status(p installPaths, w io.Writer) int {
 				missing++
 			}
 		}
-		detail := p.manifest + " — scans: " + strings.Join(cfg.Paths, ", ")
+		detail := p.manifest + " - scans: " + strings.Join(cfg.Paths, ", ")
 		switch {
 		case len(cfg.Paths) == 0:
 			row(false, "Scan settings", p.manifest+" lists no folders to scan")
@@ -174,16 +174,16 @@ func status(p installPaths, w io.Writer) int {
 	case runtime.GOOS == "windows" && !isElevated():
 		// Windows hides SYSTEM tasks from standard accounts, so "not found"
 		// here proves nothing — don't cry wolf.
-		info("Weekly scan", "cannot be checked from a standard account — run status from an administrator prompt")
+		info("Weekly scan", "cannot be checked from a standard account - run status from an administrator prompt")
 	default:
-		row(false, "Weekly scan", "not scheduled — run: privacylens install")
+		row(false, "Weekly scan", "not scheduled - run: privacylens install")
 	}
 
 	switch last, err := readLastScan(p.logPath); {
 	case err != nil && os.IsNotExist(err):
-		info("Last scan", "none yet — no findings log at "+p.logPath)
+		info("Last scan", "none yet - no findings log at "+p.logPath)
 	case err != nil:
-		info("Last scan", fmt.Sprintf("unknown — cannot read %s (%v)", p.logPath, err))
+		info("Last scan", fmt.Sprintf("unknown - cannot read %s (%v)", p.logPath, err))
 	case last == nil:
 		info("Last scan", "none recorded yet in "+p.logPath)
 	default:
@@ -194,9 +194,9 @@ func status(p installPaths, w io.Writer) int {
 			when = fmt.Sprintf("%s (%s ago)", t.Local().Format("Mon Jan 2 2006 15:04"), roughAge(age))
 			stale = age > 9*24*time.Hour
 		}
-		detail := fmt.Sprintf("%s — %d finding(s) in %d file(s)", when, last.Findings, last.FilesScanned)
+		detail := fmt.Sprintf("%s - %d finding(s) in %d file(s)", when, last.Findings, last.FilesScanned)
 		if stale {
-			row(false, "Last scan", detail+" — more than a week old; was this computer off on Sunday night?")
+			row(false, "Last scan", detail+" - more than a week old; was this computer off on Sunday night?")
 		} else {
 			row(true, "Last scan", detail)
 		}
@@ -208,20 +208,20 @@ func status(p installPaths, w io.Writer) int {
 	} else if os.IsNotExist(err) {
 		info("Findings log", p.logPath+" (created by the first scan)")
 	} else {
-		info("Findings log", p.logPath+" — not writable by this account, so scans you run by hand use your per-user log")
+		info("Findings log", p.logPath+" - not writable by this account, so scans you run by hand use your per-user log")
 	}
 
 	if img, pdf := extract.HaveOCR(); img && pdf {
 		row(true, "OCR", "ready (images and scanned PDFs)")
 	} else if img {
-		info("OCR", "images only — scanned PDFs need poppler (pdftoppm)")
+		info("OCR", "images only - scanned PDFs need poppler (pdftoppm)")
 	} else {
-		info("OCR", "not installed — scanned documents are listed as needing OCR")
+		info("OCR", "not installed - scanned documents are listed as needing OCR")
 	}
 
 	agent := checkInsightsAgent(p.logPath)
 	if agent.found && !agent.watching && !strings.Contains(agent.summary, "could not read") {
-		row(false, "Insights", agent.summary+" — add the <localfile> block from deploy/insights/agent-ossec.conf-snippet.xml")
+		row(false, "Insights", agent.summary+" - add the <localfile> block from deploy/insights/agent-ossec.conf-snippet.xml")
 	} else if agent.watching {
 		row(true, "Insights", agent.summary)
 	} else {

@@ -1,0 +1,10 @@
+#!/bin/sh
+# Runs as root after the package has placed /usr/local/bin/privacylens and
+# /Applications/PrivacyLens.app. Everything else - scan settings, the weekly
+# launchd job, the findings log - is done by the program's own installer, the
+# same one "sudo privacylens install" runs. Output lands in
+# /var/log/install.log; a non-zero exit makes Installer report failure.
+#
+# -no-ocr: a package install must not start a long Homebrew download. OCR
+# tools that are already present are detected and used.
+exec /usr/local/bin/privacylens install -no-ocr

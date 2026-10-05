@@ -8,6 +8,7 @@
 	<key>CFBundleDisplayName</key><string>PrivacyLens</string>
 	<key>CFBundleIdentifier</key><string>com.cybx.privacylens.gui</string>
 	<key>CFBundleExecutable</key><string>PrivacyLens</string>
+	<key>CFBundleIconFile</key><string>icon</string>
 	<key>CFBundlePackageType</key><string>APPL</string>
 	<key>CFBundleVersion</key><string>@VERSION@</string>
 	<key>CFBundleShortVersionString</key><string>@VERSION@</string>

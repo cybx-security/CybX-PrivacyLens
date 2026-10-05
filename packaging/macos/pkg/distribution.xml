@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Installer.app wizard definition for the PrivacyLens package;
+     scripts/build-all.sh substitutes @VERSION@. -->
+<installer-gui-script minSpecVersion="2">
+    <title>PrivacyLens</title>
+    <welcome file="welcome.html" mime-type="text/html"/>
+    <conclusion file="conclusion.html" mime-type="text/html"/>
+    <!-- One fixed install for all users: no "choose what to install" or
+         "choose a disk" pages. -->
+    <options customize="never" require-scripts="false" hostArchitectures="arm64,x86_64"/>
+    <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
+    <os-version min="11.0"/>
+    <choices-outline>
+        <line choice="default"/>
+    </choices-outline>
+    <choice id="default" title="PrivacyLens">
+        <pkg-ref id="com.cybx.privacylens.pkg"/>
+    </choice>
+    <pkg-ref id="com.cybx.privacylens.pkg" version="@VERSION@" onConclusion="none">PrivacyLens-component.pkg</pkg-ref>
+</installer-gui-script>

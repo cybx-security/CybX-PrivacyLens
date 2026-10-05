@@ -65,6 +65,35 @@ jobs:
           Start-Sleep -Seconds 10
           if (Test-Path "$env:ProgramFiles\PrivacyLens") { throw 'program folder not removed' }
           if (Test-Path "$env:ProgramData\PrivacyLens") { throw 'data folder not purged' }
+      # The same again through the setup wizard, silently - what a customer
+      # (or an RMM) actually runs.
+      - name: Setup wizard - silent install and uninstall (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $src = (Resolve-Path pkg).Path
+          $out = Join-Path $src 'PrivacyLens-Setup.exe'
+          & makensis /V2 /DVERSION=0.0.1 "/DSRC_AMD64=$src" "/DSRC_ARM64=$src" "/DGUIDE=$PWD\docs\PrivacyLens-User-Guide.docx" "/DICON=$PWD\packaging\icon\icon.ico" "/DOUTFILE=$out" packaging\windows\installer.nsi
+          if ($LASTEXITCODE -ne 0) { throw "makensis failed with exit code $LASTEXITCODE" }
+          $p = Start-Process -FilePath $out -ArgumentList '/S','/NOOCR' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "silent setup exited with $($p.ExitCode)" }
+          $dir = "$env:ProgramFiles\PrivacyLens"
+          foreach ($f in 'privacylens.exe','privacylens-gui.exe','Uninstall.exe') {
+            if (-not (Test-Path "$dir\$f")) { throw "$f not installed" }
+          }
+          & "$dir\privacylens.exe" status
+          if ($LASTEXITCODE -ne 0) { throw "status reported problems after setup" }
+          $key = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\PrivacyLens'
+          $un = (Get-ItemProperty $key).UninstallString
+          if ($un -notlike '*Uninstall.exe*') { throw "Installed-apps entry should use the wizard uninstaller, got: $un" }
+          # _?= makes the NSIS uninstaller run in place so -Wait really waits.
+          $p = Start-Process -FilePath "$dir\Uninstall.exe" -ArgumentList '/S','/PURGE',"_?=$dir" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "silent uninstall exited with $($p.ExitCode)" }
+          Start-Sleep -Seconds 10
+          if (Test-Path "$dir\privacylens.exe") { throw 'program not removed by the uninstaller' }
+          if (Test-Path $key) { throw 'Installed-apps entry not removed' }
+          if (Test-Path "$env:ProgramData\PrivacyLens") { throw 'data folder not purged' }
       - name: Install, check, scan, uninstall (Linux / macOS)
         if: runner.os != 'Windows'
         run: |
@@ -99,7 +128,9 @@ jobs:
         with:
           go-version: "1.26.6"
           cache: true
+      - run: sudo apt-get update && sudo apt-get install -y nsis
       - run: ./scripts/build-all.sh
+      - run: test -f dist/packages/PrivacyLens-Setup-*.exe
       - run: sha256sum dist/privacylens-* dist/packages/* > dist/SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:

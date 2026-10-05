@@ -20,10 +20,32 @@ func enableOCRForTest(t *testing.T) {
 	}
 	ocrEnabled = true
 	reset()
+	// Tests decide which tools exist through PATH and the env overrides;
+	// the machine's real Homebrew/MacPorts installs must not leak in.
+	savedDirs := toolDirs
+	toolDirs = nil
 	t.Cleanup(func() {
 		ocrEnabled = false
+		toolDirs = savedDirs
 		reset()
 	})
+}
+
+// The scheduled scan runs with a minimal PATH; tools in the package
+// managers' standard folders must still be found.
+func TestToolDirsSearchedAfterPATH(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix tool directories")
+	}
+	enableOCRForTest(t)
+	dir := t.TempDir()
+	writeStub(t, filepath.Join(dir, "tesseract"), `echo text`)
+	toolDirs = []string{dir}
+	t.Setenv("PRIVACYLENS_TESSERACT", "")
+	t.Setenv("PATH", t.TempDir()) // nothing in it
+	if got := tesseractBin(); got != filepath.Join(dir, "tesseract") {
+		t.Errorf("tesseractBin() = %q, want the copy in the tool directory", got)
+	}
 }
 
 // writeStub creates a fake executable shell script.

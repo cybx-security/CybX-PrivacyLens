@@ -11,16 +11,28 @@ runtime dependencies.
 
 ## Install
 
-Each release has one download per platform in `dist/packages/`
-(`PrivacyLens-<version>-windows-amd64.zip`, `…-macos-arm64.zip`,
-`…-linux-amd64.tar.gz`, and so on). Inside is everything needed and a short
-**READ ME FIRST**:
+Hand a customer one file from `dist/packages/`:
 
-| Platform | To install | Afterwards |
-| --- | --- | --- |
-| Windows | Extract the zip, double-click **Install PrivacyLens**, click Yes on the Windows prompt | **PrivacyLens** in the Start Menu; uninstall from Settings › Apps |
-| macOS | Unzip, double-click **Install PrivacyLens**, enter the Mac password | **PrivacyLens** in Applications |
-| Linux | `./install.sh` | `privacylens gui` or the applications menu |
+| Platform | File | To install | Afterwards |
+| --- | --- | --- | --- |
+| Windows | `PrivacyLens-Setup-<version>.exe` | Double-click it and follow the wizard (Next, Install, Finish) | **PrivacyLens** in the Start Menu; uninstall from Settings › Apps |
+| macOS | `PrivacyLens-<version>.pkg` | Double-click it and follow the installer | **PrivacyLens** in Applications; uninstall with `sudo privacylens uninstall` |
+| Linux | `PrivacyLens-<version>-linux-<arch>.tar.gz` | Extract, then `./install.sh` | `privacylens gui` or the applications menu |
+
+One Windows setup file covers Intel/AMD and ARM PCs; one macOS package
+covers Apple Silicon and Intel Macs. For deployment tools both install
+silently: `PrivacyLens-Setup-<version>.exe /S` (add `/NOOCR` to skip the OCR
+tools) and `sudo installer -pkg PrivacyLens-<version>.pkg -target /`.
+
+`dist/packages/` also holds portable per-architecture zips
+(`PrivacyLens-<version>-windows-amd64.zip`, `…-macos-arm64.zip`) with
+double-click **Install PrivacyLens** scripts, for when an installer program
+is not wanted.
+
+Until the files are code-signed (see [Code signing](#code-signing-for-distribution)),
+Windows shows a "Windows protected your PC" box (More info › Run anyway) and
+macOS refuses to open the package until it is allowed under System
+Settings › Privacy & Security.
 
 The installer shows every step as it runs and ends with a summary of what
 was set up and what to do next. `privacylens status` checks an installation
@@ -447,33 +459,92 @@ Requires Go 1.26+.
 ```sh
 go build -o privacylens ./cmd/privacylens   # local build
 go test ./...                               # run the test suite
-./scripts/build-all.sh                      # release binaries for every
-                                            # OS/arch target into dist/, and
-                                            # customer-ready install packages
-                                            # into dist/packages/
+./scripts/build-all.sh                      # everything for a release
 ```
+
+`build-all.sh` writes the per-platform programs to `dist/` and the
+customer-ready installers to `dist/packages/`:
+
+- the **Windows setup wizard** needs NSIS (`brew install makensis`, or
+  `apt install nsis`); its script is `packaging/windows/installer.nsi`
+- the **macOS package** needs a Mac (`pkgbuild`/`productbuild`); its wizard
+  pages and post-install script are in `packaging/macos/pkg/`
+- the portable zips and tarballs need nothing extra
+
+Each native installer is skipped with a note when its tool is missing. Both
+are thin wrappers: they put the files in place and run `privacylens
+install`, so there is one installer implementation however it is reached.
+
+The app icon lives in `packaging/icon/`. It is a placeholder drawn by
+`scripts/make-icon.py`; to use real artwork, replace `icon.png` with a
+square 1024 px PNG and run `python3 scripts/make-icon.py --from-png`.
 
 ## Code signing for distribution
 
-Unsigned binaries trigger Gatekeeper warnings on macOS and SmartScreen
-warnings on Windows. The signing pipeline is scripted; you supply the
-certificates:
+Unsigned, the installers work but each platform warns the user first.
+Signing removes the warnings and shows the company's name as the publisher.
+Nothing in the build changes — you obtain the certificates once, set a few
+environment variables, and run `SIGN=1 ./scripts/build-all.sh`, which signs
+the programs before packaging them and the installers afterwards.
 
-- **macOS** — join the Apple Developer Program ($99/yr), create a
-  *Developer ID Application* certificate, store notarization credentials with
-  `xcrun notarytool store-credentials`, then:
-  `SIGN_IDENTITY="Developer ID Application: …" ./scripts/sign-macos.sh`
-  (signs with hardened runtime + timestamp, then notarizes).
-- **Windows** — easiest path today is **Azure Trusted Signing** (~$10/mo,
-  integrates with SmartScreen); classic OV/EV certificates from Sectigo,
-  SSL.com, or DigiCert also work. For a `.pfx`-file certificate,
-  `PFX_FILE=cert.pfx PFX_PASS=… ./scripts/sign-windows.sh` signs from
-  macOS/Linux via osslsigncode.
-- **Linux** — no platform gatekeeper; publish SHA-256 checksums
-  (`shasum -a 256 dist/*`) and optionally a GPG signature.
+**What to obtain**
 
-`SIGN=1 ./scripts/build-all.sh` chains building and signing once the
-environment variables are in place.
+| | macOS | Windows |
+| --- | --- | --- |
+| Where | Apple Developer Program, developer.apple.com | Azure Artifact Signing (formerly Trusted Signing), or a certificate authority such as SSL.com, Sectigo, DigiCert |
+| Cost | $99 / year | Azure: about $10 / month. CA certificates: a few hundred dollars a year |
+| You need | The company as a legal entity (LLC, corporation — a trade name alone is not accepted) and its D-U-N-S number; or enroll as an individual, in which case your own name is shown as the publisher | Identity validation of the same legal entity (Azure: organizations in the US, Canada, EU, UK and some other countries; individuals in the US and Canada only) |
+| You get | Two certificates: *Developer ID Application* (signs programs) and *Developer ID Installer* (signs the .pkg), plus notarization | A publicly trusted code-signing identity. Keys can no longer be exported to a file: signing goes through the cloud service or a hardware token |
+| Allow for | A few days to a few weeks for organization enrollment | 1–20 business days for validation |
+
+The name on the certificates is the legal entity's name, and that is what
+customers see ("Verified publisher: …"). Decide which entity that should be
+before applying.
+
+**macOS, once the account exists**
+
+1. In Xcode › Settings › Accounts › Manage Certificates (or the developer
+   portal), the account holder creates *Developer ID Application* and
+   *Developer ID Installer*. Both must be in the keychain of the Mac that
+   builds releases; `security find-identity -v` lists them.
+2. Create an app-specific password at account.apple.com and store it:
+   `xcrun notarytool store-credentials privacylens-notary --apple-id you@example.com --team-id TEAMID`
+3. Build:
+
+   ```sh
+   SIGN=1 \
+   SIGN_IDENTITY="Developer ID Application: Company (TEAMID)" \
+   INSTALLER_IDENTITY="Developer ID Installer: Company (TEAMID)" \
+   ./scripts/build-all.sh
+   ```
+
+   The programs are signed with the hardened runtime, the `.pkg` is signed,
+   notarized by Apple, and stapled so it installs offline.
+
+**Windows, once validation is complete**
+
+Signing runs from the Mac through [jsign](https://ebourg.github.io/jsign/)
+(`brew install jsign`). Put the options for your provider in `JSIGN_ARGS` —
+`scripts/sign-windows.sh` has ready-made examples for Azure Artifact Signing
+and SSL.com eSigner — then run `SIGN=1 ./scripts/build-all.sh`. It signs
+`privacylens.exe`, `privacylens-gui.exe`, and the setup wizard. (A legacy
+`.pfx` file still works through `PFX_FILE`/`PFX_PASS` and osslsigncode.)
+
+A new Windows certificate does not silence SmartScreen on day one:
+reputation builds as signed copies are downloaded and run, so the "Windows
+protected your PC" box can still appear for the first weeks, now with the
+publisher's name on it.
+
+Known gap: the wizard's embedded `Uninstall.exe` is not signed by this
+pipeline (it is generated inside the setup file). It is run from Program
+Files, not downloaded, so it draws no warning; signing it needs a two-pass
+NSIS build.
+
+**Linux** has no platform gatekeeper; publish SHA-256 checksums
+(`shasum -a 256 dist/packages/*`) and optionally a GPG signature.
+
+The signing scripts have not been exercised yet — no certificates exist on
+the build machine — so expect to adjust details on the first signed build.
 
 ## Architecture
 
@@ -481,8 +552,9 @@ environment variables are in place.
 cmd/privacylens      CLI: flags, output wiring, exit codes; `gui`, `install`,
                      `uninstall`, and `status` subcommands
 cmd/privacylens-gui  Double-click launcher for the GUI (no console window)
-packaging/           Install scripts and READ ME files that go into the
-                     per-platform release packages (scripts/build-all.sh)
+packaging/           What turns the programs into installers: the Windows
+                     setup wizard script, the macOS package pages, the
+                     portable packages' install scripts, and the app icon
 internal/detect      Detection engine: regexes + checksums + context keywords
 internal/extract     Text extraction: plain text, docx/xlsx/pptx, PDF
 internal/scanner     Directory walking, worker pool, line/context resolution
