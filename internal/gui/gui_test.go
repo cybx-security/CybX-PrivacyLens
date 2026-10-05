@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSecurityHeaders(t *testing.T) {
@@ -161,4 +162,61 @@ func TestIndexEscapesDefaultPath(t *testing.T) {
 	if strings.Contains(page, "R&D <x>") || !strings.Contains(page, "R&amp;D &lt;x&gt;") {
 		t.Error("default path was not HTML-escaped in the page")
 	}
+}
+
+func stopped(s *server) bool {
+	select {
+	case <-s.stop:
+		return true
+	default:
+		return false
+	}
+}
+
+// The idle watchdog stops the server once no page has made contact, but
+// never while a scan is running.
+func TestIdleWatchdog(t *testing.T) {
+	s := &server{stop: make(chan struct{})}
+	s.prog.Active = true
+	go s.watchIdle(20*time.Millisecond, 5*time.Millisecond)
+	time.Sleep(80 * time.Millisecond)
+	if stopped(s) {
+		t.Fatal("watchdog stopped the server during a scan")
+	}
+	s.progMu.Lock()
+	s.prog.Active = false
+	s.progMu.Unlock()
+	select {
+	case <-s.stop:
+	case <-time.After(2 * time.Second):
+		t.Fatal("watchdog never stopped an idle server")
+	}
+}
+
+// Any authenticated request counts as contact and resets the idle clock.
+func TestAuthResetsIdle(t *testing.T) {
+	s := &server{token: "secret", stop: make(chan struct{})}
+	s.idleTicks.Store(7)
+	req := httptest.NewRequest(http.MethodGet, "/api/ping", nil)
+	req.Header.Set("X-PL-Token", "secret")
+	rr := httptest.NewRecorder()
+	s.auth(s.handlePing)(rr, req)
+	if rr.Code != http.StatusNoContent || s.idleTicks.Load() != 0 {
+		t.Fatalf("status = %d, idleTicks = %d", rr.Code, s.idleTicks.Load())
+	}
+}
+
+func TestQuitStopsServer(t *testing.T) {
+	s := &server{stop: make(chan struct{})}
+	rr := httptest.NewRecorder()
+	s.handleQuit(rr, httptest.NewRequest(http.MethodGet, "/api/quit", nil))
+	if rr.Code != http.StatusMethodNotAllowed || stopped(s) {
+		t.Fatalf("GET must not quit (status %d)", rr.Code)
+	}
+	rr = httptest.NewRecorder()
+	s.handleQuit(rr, httptest.NewRequest(http.MethodPost, "/api/quit", nil))
+	if rr.Code != http.StatusNoContent || !stopped(s) {
+		t.Fatalf("POST should quit (status %d)", rr.Code)
+	}
+	s.handleQuit(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/api/quit", nil)) // second quit must not panic
 }

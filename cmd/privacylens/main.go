@@ -52,7 +52,9 @@ func main() {
 		case "install":
 			os.Exit(runInstall(os.Args[2:]))
 		case "uninstall":
-			os.Exit(runUninstall())
+			os.Exit(runUninstall(os.Args[2:]))
+		case "status":
+			os.Exit(runStatus(os.Args[2:]))
 		}
 	}
 	os.Exit(run())
@@ -118,14 +120,15 @@ func run() int {
 Usage:
   privacylens [flags] <path> [<path>...]
   privacylens gui [-addr 127.0.0.1:0] [-no-open]
-  privacylens install [-no-ocr]     (as root/elevated)
-  privacylens uninstall
+  privacylens install [-no-ocr]     set up this computer (needs admin rights)
+  privacylens status                check that the installation is healthy
+  privacylens uninstall [-purge]    remove it again
 
 Scans the given files and directories for SSNs, credit cards, driver's
 licenses, medical identifiers (HIPAA), bank details, and other PII, then
 reports the file, location, category, and masked context of every hit.
 "privacylens gui" starts the local web interface. "privacylens install"
-sets up the binary, scan manifest, weekly scheduled scan, and OCR tools.
+sets up the program, scan manifest, weekly scheduled scan, and OCR tools.
 
 Flags:
 `, toolName, version)

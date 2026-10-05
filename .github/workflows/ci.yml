@@ -23,6 +23,59 @@ jobs:
       - run: go vet ./...
       - if: runner.os != 'Windows'
         run: go test -race ./...
+  # Runs the real installer on each OS (the hosted runners are elevated),
+  # then checks the result with "status" and removes it again. This is the
+  # only place the Windows install path — Program Files, ACLs, scheduled
+  # task, shortcut, Installed-apps entry — is exercised end to end.
+  installer:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.6"
+          cache: true
+      - name: Build
+        shell: bash
+        run: |
+          mkdir pkg
+          go build -o pkg/privacylens${{ runner.os == 'Windows' && '.exe' || '' }} ./cmd/privacylens
+          go build -o pkg/privacylens-gui${{ runner.os == 'Windows' && '.exe' || '' }} ./cmd/privacylens-gui
+      - name: Install, check, scan, uninstall (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Check($what) { if ($LASTEXITCODE -ne 0) { throw "$what failed with exit code $LASTEXITCODE" } }
+          ./pkg/privacylens.exe install -no-ocr; Check 'install'
+          $exe = "$env:ProgramFiles\PrivacyLens\privacylens.exe"
+          & $exe status; Check 'status'
+          if (-not (Test-Path "$env:ProgramFiles\PrivacyLens\privacylens-gui.exe")) { throw 'GUI launcher not installed' }
+          if (-not (Test-Path "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\PrivacyLens.lnk")) { throw 'Start Menu shortcut missing' }
+          if (-not (Test-Path 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\PrivacyLens')) { throw 'Installed-apps entry missing' }
+          schtasks /Query /TN "PrivacyLens Scan"; Check 'scheduled task query'
+          & $exe -quiet testdata
+          if ($LASTEXITCODE -ne 1) { throw "scan of testdata should exit 1 (PII found), got $LASTEXITCODE" }
+          if (-not (Select-String -Path "$env:ProgramData\PrivacyLens\logs\findings.json" -Pattern 'scan_summary' -Quiet)) { throw 'scan did not reach the machine-wide findings log' }
+          & $exe uninstall -purge; Check 'uninstall'
+          Start-Sleep -Seconds 10
+          if (Test-Path "$env:ProgramFiles\PrivacyLens") { throw 'program folder not removed' }
+          if (Test-Path "$env:ProgramData\PrivacyLens") { throw 'data folder not purged' }
+      - name: Install, check, scan, uninstall (Linux / macOS)
+        if: runner.os != 'Windows'
+        run: |
+          set -eux
+          sudo ./pkg/privacylens install -no-ocr
+          /usr/local/bin/privacylens status
+          sudo /usr/local/bin/privacylens -quiet testdata && exit 1 || [ $? -eq 1 ]
+          sudo grep -q scan_summary /var/log/privacylens/findings.json
+          sudo /usr/local/bin/privacylens uninstall -purge
+          [ ! -e /usr/local/bin/privacylens ]
+          [ ! -e /etc/privacylens ]
   security:
     runs-on: ubuntu-latest
     steps:
@@ -47,7 +100,7 @@ jobs:
           go-version: "1.26.6"
           cache: true
       - run: ./scripts/build-all.sh
-      - run: sha256sum dist/privacylens-* > dist/SHA256SUMS
+      - run: sha256sum dist/privacylens-* dist/packages/* > dist/SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
           name: unsigned-release-candidates

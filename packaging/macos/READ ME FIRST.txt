@@ -1,0 +1,56 @@
+PrivacyLens for macOS  -  version @VERSION@
+========================================
+
+PrivacyLens finds personal information (Social Security numbers, card
+numbers, medical and bank details, and more) stored in files on this
+Mac, and tells you exactly where it is.
+
+
+INSTALL  (about 2 minutes)
+--------------------------
+1. Double-click  "Install PrivacyLens".
+2. A Terminal window opens and asks for your Mac password (you need to be
+   an administrator). Nothing shows as you type - that is normal.
+3. The window shows each step as it happens. When it says
+   "PrivacyLens is installed", press any key to close it.
+
+If macOS says the installer "cannot be opened" or "could not be verified":
+open System Settings > Privacy & Security, scroll down, click "Open Anyway"
+next to the PrivacyLens message, and double-click the installer again.
+
+
+USE IT
+------
+Open the Applications folder and double-click PrivacyLens.
+It opens in your web browser. Pick the folders to check and click Scan.
+Nothing leaves this Mac - the page talks only to PrivacyLens itself.
+
+Every scan is saved automatically; the green box under the results shows
+where. When you are finished, click "Quit PrivacyLens" at the top right.
+
+PrivacyLens also scans this Mac by itself every Sunday at 2:00 AM.
+
+
+CHECK THAT IT IS WORKING
+------------------------
+Open Terminal and run:
+
+    privacylens status
+
+Every line should say "ok". Lines marked FIX explain what to do.
+
+
+REMOVE IT
+---------
+Double-click "Uninstall PrivacyLens" in this folder (or run
+"sudo privacylens uninstall" in Terminal). Your scan settings, saved
+reports, and findings log are kept.
+
+
+WHAT IS IN THIS FOLDER
+----------------------
+Install PrivacyLens.command     the installer (start here)
+Uninstall PrivacyLens.command   removes PrivacyLens
+privacylens                     the program (command line + installer)
+PrivacyLens.app                 the app you open from Applications
+PrivacyLens User Guide.docx     the full manual

@@ -22,6 +22,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rdataback/privacylens/internal/detect"
@@ -40,6 +41,11 @@ type Options struct {
 	OpenBrowser bool
 	Tool        string
 	Version     string
+	// IdleExit stops the server once no page has contacted it for this long
+	// and no scan is running. Zero means run until stopped. The double-click
+	// launcher sets it: with no console there is no Ctrl+C, and without it
+	// every launch would leave a process behind until logout.
+	IdleExit time.Duration
 }
 
 type server struct {
@@ -48,6 +54,14 @@ type server struct {
 	// sysLog is the machine-wide Insights findings log; a field so tests can
 	// point it away from the real one.
 	sysLog string
+
+	// idleTicks counts watchdog intervals since a page last made contact;
+	// any authenticated request resets it. Counting ticks rather than
+	// comparing wall-clock times means a laptop waking from sleep is not
+	// mistaken for a long silence.
+	idleTicks atomic.Int32
+	stopOnce  sync.Once
+	stop      chan struct{} // closed to shut the server down
 
 	mu   sync.Mutex
 	last *report.Report // most recent scan, for report downloads
@@ -76,13 +90,18 @@ func Run(opts Options) error {
 	if _, err := rand.Read(tok); err != nil {
 		return err
 	}
-	s := &server{opts: opts, token: hex.EncodeToString(tok), sysLog: paths.SystemFindingsLog()}
+	s := &server{
+		opts: opts, token: hex.EncodeToString(tok),
+		sysLog: paths.SystemFindingsLog(), stop: make(chan struct{}),
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.handleIndex)
 	mux.HandleFunc("/api/scan", s.auth(s.handleScan))
 	mux.HandleFunc("/api/progress", s.auth(s.handleProgress))
 	mux.HandleFunc("/api/download", s.auth(s.handleDownload))
+	mux.HandleFunc("/api/ping", s.auth(s.handlePing))
+	mux.HandleFunc("/api/quit", s.auth(s.handleQuit))
 
 	ln, err := net.Listen("tcp", opts.Addr)
 	if err != nil {
@@ -94,7 +113,7 @@ func Run(opts Options) error {
 		return fmt.Errorf("refusing non-loopback GUI address %s", ln.Addr())
 	}
 	url := fmt.Sprintf("http://%s/?token=%s", ln.Addr(), s.token)
-	fmt.Printf("%s GUI running at:\n\n  %s\n\nPress Ctrl+C to stop.\n", opts.Tool, url)
+	fmt.Printf("%s GUI running at:\n\n  %s\n\nPress Ctrl+C (or use Quit on the page) to stop.\n", opts.Tool, url)
 	if opts.OpenBrowser {
 		openBrowser(url)
 	}
@@ -107,7 +126,72 @@ func Run(opts Options) error {
 		// A scan response can legitimately take hours, so WriteTimeout stays
 		// unset; request cancellation is propagated to the scan instead.
 	}
-	return srv.Serve(ln)
+	if opts.IdleExit > 0 {
+		go s.watchIdle(opts.IdleExit, idleTick)
+	}
+	go func() {
+		<-s.stop
+		// Give the reply to /api/quit a moment to flush, then close for
+		// real: Close (unlike Shutdown) also cancels a scan in flight.
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		srv.Shutdown(ctx)
+		srv.Close()
+	}()
+	if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
+}
+
+// idleTick is how often the idle watchdog checks for page contact.
+const idleTick = 30 * time.Second
+
+// watchIdle stops the server after limit has passed with no authenticated
+// request and no scan running. An open page pings every few seconds (once
+// a minute when the browser throttles a background tab), so this only fires
+// when every PrivacyLens tab has been closed.
+func (s *server) watchIdle(limit, tick time.Duration) {
+	t := time.NewTicker(tick)
+	defer t.Stop()
+	for {
+		select {
+		case <-s.stop:
+			return
+		case <-t.C:
+		}
+		s.progMu.Lock()
+		scanning := s.prog.Active
+		s.progMu.Unlock()
+		if scanning {
+			s.idleTicks.Store(0)
+			continue
+		}
+		if time.Duration(s.idleTicks.Add(1))*tick >= limit {
+			s.shutdown()
+			return
+		}
+	}
+}
+
+func (s *server) shutdown() {
+	s.stopOnce.Do(func() { close(s.stop) })
+}
+
+// handlePing is the page's heartbeat; auth() already recorded the contact.
+func (s *server) handlePing(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleQuit stops PrivacyLens from the page — the only way to stop the
+// windowed launcher, which has no console to press Ctrl+C in.
+func (s *server) handleQuit(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+	s.shutdown()
 }
 
 func securityHeaders(next http.Handler) http.Handler {
@@ -165,6 +249,7 @@ func (s *server) auth(next http.HandlerFunc) http.HandlerFunc {
 			http.Error(w, "missing or invalid token", http.StatusForbidden)
 			return
 		}
+		s.idleTicks.Store(0)
 		next(w, r)
 	}
 }

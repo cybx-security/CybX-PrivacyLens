@@ -1,0 +1,60 @@
+PrivacyLens for Windows  -  version @VERSION@
+==========================================
+
+PrivacyLens finds personal information (Social Security numbers, card
+numbers, medical and bank details, and more) stored in files on this
+computer, and tells you exactly where it is.
+
+
+INSTALL  (about 2 minutes)
+--------------------------
+1. Extract this zip first: right-click it and choose "Extract All".
+   (Running straight from inside the zip does not work.)
+2. In the extracted folder, double-click  "Install PrivacyLens".
+3. Windows asks "Do you want to allow this app to make changes?" - click Yes.
+4. A window shows each step as it happens. When it says
+   "PrivacyLens is installed", press Enter to close it.
+
+If Windows shows a blue "Windows protected your PC" box, click
+"More info" and then "Run anyway".
+
+
+USE IT
+------
+Open the Start Menu, type  PrivacyLens , and press Enter.
+It opens in your web browser. Pick the folders to check and click Scan.
+Nothing leaves this computer - the page talks only to PrivacyLens itself.
+
+Every scan is saved automatically; the green box under the results shows
+where. When you are finished, click "Quit PrivacyLens" at the top right.
+
+PrivacyLens also scans this computer by itself every Sunday at 2:00 AM.
+
+
+CHECK THAT IT IS WORKING
+------------------------
+Open Command Prompt as administrator and run:
+
+    "%ProgramFiles%\PrivacyLens\privacylens.exe" status
+
+Every line should say "ok". Lines marked FIX explain what to do.
+
+
+REMOVE IT
+---------
+Settings > Apps > Installed apps > PrivacyLens > Uninstall
+(or double-click "Uninstall PrivacyLens" in this folder).
+Your scan settings, saved reports, and findings log are kept.
+
+
+WHAT IS IN THIS FOLDER
+----------------------
+Install PrivacyLens.cmd     the installer (start here)
+Uninstall PrivacyLens.cmd   removes PrivacyLens
+privacylens.exe             the program (command line + installer)
+privacylens-gui.exe         the app window you open from the Start Menu
+PrivacyLens User Guide.docx the full manual
+
+IT administrators: "privacylens.exe install" is silent-install friendly
+(run it elevated; add -no-ocr to skip the OCR tools). Full documentation
+is in the PrivacyLens User Guide.

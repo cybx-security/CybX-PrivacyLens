@@ -9,6 +9,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/rdataback/privacylens/internal/buildinfo"
 	"github.com/rdataback/privacylens/internal/extract"
@@ -28,6 +29,9 @@ func main() {
 		OpenBrowser: true,
 		Tool:        buildinfo.Tool,
 		Version:     buildinfo.Version,
+		// No console means no Ctrl+C: stop on our own once every
+		// PrivacyLens tab has been closed for a while.
+		IdleExit: 15 * time.Minute,
 	})
 	if err != nil {
 		alert(fmt.Sprintf("PrivacyLens could not start: %v", err))

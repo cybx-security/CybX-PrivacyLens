@@ -9,6 +9,25 @@ reports **which file**, **which line**, **what category**, and the
 Runs on Windows, Linux, and macOS as a single self-contained binary with no
 runtime dependencies.
 
+## Install
+
+Each release has one download per platform in `dist/packages/`
+(`PrivacyLens-<version>-windows-amd64.zip`, `…-macos-arm64.zip`,
+`…-linux-amd64.tar.gz`, and so on). Inside is everything needed and a short
+**READ ME FIRST**:
+
+| Platform | To install | Afterwards |
+| --- | --- | --- |
+| Windows | Extract the zip, double-click **Install PrivacyLens**, click Yes on the Windows prompt | **PrivacyLens** in the Start Menu; uninstall from Settings › Apps |
+| macOS | Unzip, double-click **Install PrivacyLens**, enter the Mac password | **PrivacyLens** in Applications |
+| Linux | `./install.sh` | `privacylens gui` or the applications menu |
+
+The installer shows every step as it runs and ends with a summary of what
+was set up and what to do next. `privacylens status` checks an installation
+at any time. Details, silent installs, and what gets written where are under
+[Scheduled deployment](#scheduled-deployment). No installation is needed for
+one-off use — the binary runs as-is.
+
 ## Quick start
 
 ```sh
@@ -103,6 +122,11 @@ the same interface with no terminal involved): enter
 paths, set options, hit **Scan**, filter the results table, and download the
 HTML/JSON/CSV/syslog reports. It is the same engine and the same single
 binary as the CLI.
+
+**Quit PrivacyLens** (top right of the page) stops the program. The
+double-click launcher also stops by itself about 15 minutes after its last
+browser tab is closed (never during a scan), so nothing is left running in
+the background. Reloading the page is fine — the session survives it.
 
 Security posture: the server binds to 127.0.0.1 only (refuses non-loopback
 addresses), and every API call requires a random per-session token embedded
@@ -314,19 +338,23 @@ with logrotate or a scheduled cleanup if scans are large.
 
 The intended fleet setup — install once per machine, scan weekly (or on
 demand), findings flow through the local Insights agent to your dashboard — is
-built into the binary. **One installer, every platform**: download the
-binary for the machine and run it elevated:
+built into the binary. **One installer, every platform.** The release
+packages wrap it in a double-click script; from a terminal it is:
 
 ```
 sudo ./privacylens install          # Linux / macOS
-.\privacylens.exe install           # Windows, from an elevated prompt
+.\privacylens.exe install           # Windows (asks for administrator rights itself)
 ```
 
-The installer:
+The installer prints each step as it happens and finishes with a summary and
+a "what to do next" list. It:
 
-- copies the binary to the standard location (`/usr/local/bin/privacylens`,
-  `C:\ProgramData\PrivacyLens\privacylens.exe`)
-- writes a starter `scan.json` manifest (an existing one is never touched)
+- copies the program to an administrator-only location —
+  `C:\Program Files\PrivacyLens\` on Windows, `/usr/local/bin/privacylens`
+  elsewhere — along with the GUI launcher when it sits beside the installer
+  (`privacylens-gui.exe`; `/Applications/PrivacyLens.app` on macOS)
+- writes a starter `scan.json` manifest (an existing one is never touched) to
+  `C:\ProgramData\PrivacyLens\` or `/etc/privacylens/`
 - registers the weekly scan, Sundays 02:00 — Task Scheduler ("PrivacyLens
   Scan", as SYSTEM), systemd (`privacylens.timer`, with `SuccessExitStatus=1`
   because "PII found" is a successful scan), or launchd
@@ -335,14 +363,52 @@ The installer:
   apt/dnf/yum, or Homebrew, and enables `"ocr": true` in a fresh manifest
   when they're working — pass `-no-ocr` to skip; if no package manager is
   found the install still succeeds and says what to add manually
-- on Windows, sets `PRIVACYLENS_DATA_DIR=C:\ProgramData\PrivacyLens`
-  machine-wide so every scan (scheduled, manual, GUI) feeds the same
-  findings log the Insights agent tails
+- creates the machine-wide findings log and lets standard users append to it
+- on Windows, adds a **Start Menu shortcut** and an entry under **Settings ›
+  Apps › Installed apps** with a working Uninstall button, and sets
+  `PRIVACYLENS_DATA_DIR=C:\ProgramData\PrivacyLens` machine-wide so the
+  weekly scan's saved reports land somewhere findable
+
+Re-running the installer upgrades in place. Unattended installs (RMM, GPO,
+scripts) work as-is when already elevated: nothing prompts, and the exit
+code is 0 on success, 2 on failure.
+
+**Upgrading from 0.9.5 or earlier on Windows:** the program used to live in
+`C:\ProgramData\PrivacyLens\`, a folder ordinary users can create files
+under — not a safe home for something the weekly task runs as SYSTEM. 0.9.6
+installs to `C:\Program Files\PrivacyLens\`, re-points the scheduled task,
+removes the old copy, and puts the ProgramData folder back under
+administrator ownership. The manifest and findings log stay where they are,
+so agent configuration does not change. If a script or shortcut of yours
+calls the old `C:\ProgramData\PrivacyLens\privacylens.exe` path, update it.
+
+**Checking an installation** — `privacylens status` answers "is it set up,
+is it scanning, are findings reaching Insights?" in plain language:
+
+```
+PrivacyLens 0.9.6 — status of this computer
+
+  ok   Program        C:\Program Files\PrivacyLens\privacylens.exe
+  ok   Scan settings  C:\ProgramData\PrivacyLens\scan.json — scans: C:\Users
+  ok   Weekly scan    scheduled, Sundays 02:00 (Task Scheduler task "PrivacyLens Scan", runs as SYSTEM)
+  ok   Last scan      Sun Oct 4 2026 02:07 (31 h ago) — 12 finding(s) in 4210 file(s)
+  ok   Findings log   C:\ProgramData\PrivacyLens\logs\findings.json
+  ok   OCR            ready (images and scanned PDFs)
+  ok   Insights       agent installed and watching the findings log
+```
+
+Lines marked `FIX` say what to do; the exit code is 0 when healthy and 1
+when something needs attention, so it can be polled by a monitoring tool.
 
 On-demand scans after install: `Start-ScheduledTask -TaskName "PrivacyLens
 Scan"` / `systemctl start privacylens.service` / `sudo launchctl start
-com.cybx.privacylens`. Remove the schedule with `privacylens uninstall`
-(binary, manifest, and logs stay).
+com.cybx.privacylens`.
+
+**Uninstalling** — Settings › Apps › Installed apps › PrivacyLens on
+Windows, or `privacylens uninstall` (with sudo on Linux/macOS). It removes
+the weekly scan, the program, and its shortcuts. The manifest, saved
+reports, and findings log are your records and are kept; add `-purge` to
+delete those too. The OCR tools are separate programs and stay installed.
 
 **Insights wiring**, both halves (troubleshooting runbook:
 [deploy/insights/TESTING.md](deploy/insights/TESTING.md); event schema for
@@ -381,8 +447,10 @@ Requires Go 1.26+.
 ```sh
 go build -o privacylens ./cmd/privacylens   # local build
 go test ./...                               # run the test suite
-./scripts/build-all.sh                      # release binaries for all six
-                                            # OS/arch targets into dist/
+./scripts/build-all.sh                      # release binaries for every
+                                            # OS/arch target into dist/, and
+                                            # customer-ready install packages
+                                            # into dist/packages/
 ```
 
 ## Code signing for distribution
@@ -410,7 +478,11 @@ environment variables are in place.
 ## Architecture
 
 ```
-cmd/privacylens      CLI: flags, output wiring, exit codes; `gui` subcommand
+cmd/privacylens      CLI: flags, output wiring, exit codes; `gui`, `install`,
+                     `uninstall`, and `status` subcommands
+cmd/privacylens-gui  Double-click launcher for the GUI (no console window)
+packaging/           Install scripts and READ ME files that go into the
+                     per-platform release packages (scripts/build-all.sh)
 internal/detect      Detection engine: regexes + checksums + context keywords
 internal/extract     Text extraction: plain text, docx/xlsx/pptx, PDF
 internal/scanner     Directory walking, worker pool, line/context resolution
@@ -421,11 +493,13 @@ internal/gui         Localhost web GUI: token-guarded API + embedded SPA
 Adding a detector is one entry in `internal/detect/patterns.go`: a regex, an
 optional validator, and optional context keywords.
 
-## Known limitations (v0.1)
+## Known limitations
 
 - US-centric identifiers (SSN, ABA, US phone formats)
-- No OCR: image-only PDFs and scanned documents cannot be read — they are
-  flagged as "needs OCR" in reports (console, JSON `need_ocr_files`, HTML,
-  GUI) but their contents are not searched
-- Legacy `.doc/.xls/.ppt` binary formats not parsed
+- Scanned documents and images are only read when OCR is enabled and the
+  OCR tools are installed; otherwise they are flagged as "needs OCR"
+  (console, JSON `need_ocr_files`, HTML, GUI) and not searched
+- Legacy `.doc/.xls/.ppt`, Outlook `.msg`, OpenDocument, and similar formats
+  are not parsed — they are counted and listed as "documents not searched"
+  (JSON `unreadable_doc_files`) so the gap is visible
 - Names and postal addresses are not detected (requires NLP, not regex)

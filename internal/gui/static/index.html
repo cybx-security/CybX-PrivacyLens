@@ -62,7 +62,13 @@
 </style>
 </head>
 <body>
-<header><h1>PrivacyLens</h1><span class="sub">PII discovery scanner · v__VERSION__</span></header>
+<header><h1>PrivacyLens</h1><span class="sub">PII discovery scanner · v__VERSION__</span>
+  <button id="quitBtn" type="button" title="Stop PrivacyLens on this computer" style="margin-left:auto;background:transparent;border:1px solid #5b6875;color:#dfe6ee;padding:6px 14px;font-size:13px">Quit PrivacyLens</button>
+</header>
+<div id="stopped" class="hidden" role="alert" style="background:#fdecea;border-bottom:1px solid #f5c6c1;padding:14px 32px;font-size:14px">
+  <strong>PrivacyLens is no longer running.</strong> <span id="stoppedWhy"></span>
+  Reports that were saved are still on this computer. To scan again, start PrivacyLens again and close this tab.
+</div>
 <main>
   <div class="panel">
     <label for="paths">Folders or files to scan (one per line)</label>
@@ -235,6 +241,33 @@
     scanBtn.disabled = true;
   }
 
+  // Heartbeat: tells the server a page is still open (the double-click
+  // launcher exits on its own once none is), and tells the user plainly
+  // when the server has gone away instead of failing on the next click.
+  var stopped = false, missedPings = 0;
+  function showStopped(why) {
+    stopped = true;
+    document.getElementById('stoppedWhy').textContent = why || '';
+    document.getElementById('stopped').classList.remove('hidden');
+    scanBtn.disabled = true;
+    document.getElementById('quitBtn').disabled = true;
+  }
+  function ping() {
+    if (stopped || !TOKEN) { return; }
+    fetch('/api/ping', { headers: { 'X-PL-Token': TOKEN } }).then(function (r) {
+      missedPings = r.ok ? 0 : missedPings + 1;
+    }).catch(function () { missedPings++; }).then(function () {
+      if (missedPings >= 2 && !scanController) { showStopped('It was closed or stopped after sitting idle.'); }
+    });
+  }
+  setInterval(ping, 20000);
+  document.getElementById('quitBtn').addEventListener('click', function () {
+    if (scanController && !confirm('A scan is still running. Quit PrivacyLens and cancel it?')) { return; }
+    fetch('/api/quit', { method: 'POST', headers: { 'X-PL-Token': TOKEN } })
+      .catch(function () { /* the server closing mid-reply is success here */ })
+      .then(function () { showStopped(''); });
+  });
+
   var catsBox = document.getElementById('cats');
   catsBox.innerHTML = CATEGORIES.map(function (c, i) {
     return '<div class="check"><input type="checkbox" id="cat' + i + '" checked data-cat="' + esc(c) + '">' +
@@ -289,7 +322,7 @@
       setStatus('Scan failed: ' + esc(err.message), true);
       results.classList.add('hidden');
 	    }).finally(function () {
-	      stopProgress(); scanBtn.disabled = false;
+	      stopProgress(); scanBtn.disabled = stopped;
 	      cancelBtn.classList.add('hidden'); scanController = null;
 	    });
 	  });

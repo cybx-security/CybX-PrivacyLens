@@ -57,7 +57,7 @@ agent's read offset).
 ```powershell
 mkdir C:\pii-test
 Set-Content C:\pii-test\seed.txt "Employee SSN: 219-09-9999 on file."
-& 'C:\ProgramData\PrivacyLens\privacylens.exe' C:\pii-test
+& 'C:\Program Files\PrivacyLens\privacylens.exe' C:\pii-test
 ```
 
 That single high-confidence SSN finding should surface as rule **100953**
