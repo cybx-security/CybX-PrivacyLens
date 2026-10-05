@@ -1,0 +1,55 @@
+name: CI
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "17 8 * * 1"
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.6"
+          cache: true
+      - run: go test ./...
+      - run: go vet ./...
+      - if: runner.os != 'Windows'
+        run: go test -race ./...
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.6"
+          cache: true
+      - run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - run: govulncheck ./...
+      - run: go test -coverprofile=coverage.out ./...
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+  cross-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.6"
+          cache: true
+      - run: ./scripts/build-all.sh
+      - run: sha256sum dist/privacylens-* > dist/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-release-candidates
+          path: dist/
+          retention-days: 7

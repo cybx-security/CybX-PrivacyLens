@@ -1,0 +1,139 @@
+<!-- PrivacyLens alert rules for the Insights MANAGER.
+     Install to /var/ossec/etc/rules/privacylens_rules.xml, together with
+     ../privacylens_decoders.xml in /var/ossec/etc/decoders/, then:
+       systemctl restart wazuh-manager
+
+     Events arrive through two decode paths and both feed the same alerts:
+       - <decoded_as>json</decoded_as>  — agent-tailed NDJSON findings file
+       - <decoded_as>privacylens</decoded_as> — syslog-wrapped events
+         (network delivery, or an agent tailing the CEF file), handled by
+         the custom decoders
+
+     Rule IDs 100950-100963 are in the custom range; renumber if they clash
+     with your existing local rules. -->
+<group name="privacylens,pii,dlp,">
+
+  <!-- Base rules: level 0 = no alert by themselves; children set severity. -->
+  <rule id="100950" level="0">
+    <decoded_as>json</decoded_as>
+    <field name="tool">PrivacyLens</field>
+    <description>PrivacyLens event via JSON decoder (base)</description>
+  </rule>
+
+  <rule id="100957" level="0">
+    <decoded_as>privacylens</decoded_as>
+    <description>PrivacyLens event via syslog/CEF decoder (base)</description>
+  </rule>
+
+  <!-- Compatibility base: PrivacyLens 0.7.x and earlier emitted an
+       "event_type" JSON key, and the Insights manager's stock Suricata base rule 86600
+       captures ANY json event carrying timestamp + event_type — the event
+       then dies in the Suricata tree and rule 100950 never runs. This child
+       of 86600 pulls those events back into the PrivacyLens tree. Current
+       binaries emit "privacylens_event" instead, which never matches 86600.
+       If your ruleset has the Suricata rules disabled, the Insights manager logs a warning
+       that sid 86600 does not exist and skips just this rule — harmless. -->
+  <rule id="100958" level="0">
+    <if_sid>86600</if_sid>
+    <field name="tool">PrivacyLens</field>
+    <description>PrivacyLens event rescued from Suricata JSON base rule (compat)</description>
+  </rule>
+
+  <!-- High-confidence findings: checksum-validated identifiers. -->
+  <rule id="100951" level="10">
+    <if_sid>100950,100957,100958</if_sid>
+    <field name="confidence">high</field>
+    <description>PrivacyLens: high-confidence PII ($(data.category)) in $(data.path)</description>
+    <group>gdpr_II_5.1.f,hipaa_164.312.b,pci_dss_3.4,</group>
+  </rule>
+
+  <!-- Medium-confidence findings. -->
+  <rule id="100952" level="7">
+    <if_sid>100950,100957,100958</if_sid>
+    <field name="confidence">medium</field>
+    <description>PrivacyLens: possible PII ($(data.category)) in $(data.path)</description>
+    <group>gdpr_II_5.1.f,</group>
+  </rule>
+
+  <!-- Escalations for the most sensitive categories, regardless of
+       confidence. category_id is the stable slug. -->
+  <rule id="100953" level="12">
+    <if_sid>100950,100957,100958</if_sid>
+    <field name="category_id">ssn|itin|credit-card</field>
+    <description>PrivacyLens: $(data.category) found in $(data.path) line $(data.line)</description>
+    <group>pci_dss_3.4,gdpr_II_5.1.f,</group>
+  </rule>
+
+  <rule id="100954" level="12">
+    <if_sid>100950,100957,100958</if_sid>
+    <field name="category_id">medicare-id-hipaa|medical-record-number-hipaa|diagnosis-code-hipaa</field>
+    <description>PrivacyLens: HIPAA data ($(data.category)) found in $(data.path) line $(data.line)</description>
+    <group>hipaa_164.312.b,</group>
+  </rule>
+
+  <!-- CMMC document markings (CUI/FCI/TLP) and scope indicators (ITAR,
+       DFARS clauses, 800-171, DoD contract numbers): the file declares
+       itself regulated — or strongly hints it should be — so its presence
+       on an unmanaged share is the alert. -->
+  <rule id="100962" level="10">
+    <if_sid>100950,100957,100958</if_sid>
+    <field name="category_id">document-marking-cmmc|scope-indicator-cmmc</field>
+    <description>PrivacyLens: CMMC-regulated content ($(data.category): $(data.match)) found: $(data.path) line $(data.line)</description>
+    <group>cmmc,nist_800_171,</group>
+  </rule>
+
+  <!-- OCR refinements: findings read via OCR (PrivacyLens 0.9.0+, "ocr":
+       true in JSON events) carry real misread risk (0/O, 1/l), so they
+       alert at a lower level than text-layer findings and their
+       descriptions say to verify against the source document. These only
+       apply to the JSON transport — CEF events do not carry the ocr field.
+       A child rule overrides its parent when it also matches, so an OCR'd
+       SSN fires 100960 (level 10), not 100953 (level 12). -->
+  <rule id="100959" level="8">
+    <if_sid>100951</if_sid>
+    <field name="ocr">true</field>
+    <description>PrivacyLens: high-confidence PII ($(data.category)) via OCR in $(data.path) — verify against source</description>
+    <group>gdpr_II_5.1.f,hipaa_164.312.b,pci_dss_3.4,</group>
+  </rule>
+
+  <rule id="100960" level="10">
+    <if_sid>100953</if_sid>
+    <field name="ocr">true</field>
+    <description>PrivacyLens: $(data.category) via OCR in $(data.path) page $(data.page) — verify against source</description>
+    <group>pci_dss_3.4,gdpr_II_5.1.f,</group>
+  </rule>
+
+  <rule id="100961" level="10">
+    <if_sid>100954</if_sid>
+    <field name="ocr">true</field>
+    <description>PrivacyLens: HIPAA data ($(data.category)) via OCR in $(data.path) page $(data.page) — verify against source</description>
+    <group>hipaa_164.312.b,</group>
+  </rule>
+
+  <rule id="100963" level="8">
+    <if_sid>100962</if_sid>
+    <field name="ocr">true</field>
+    <description>PrivacyLens: CMMC-regulated content ($(data.category): $(data.match)) via OCR in $(data.path) page $(data.page) — verify against source</description>
+    <group>cmmc,nist_800_171,</group>
+  </rule>
+
+  <!-- Coverage gap: a scanned/image-only document exists that could NOT be
+       searched (no text layer; OCR pending). Its contents are unknown.
+       privacylens_event is "needs_ocr" (JSON) or "needs-ocr" (CEF), so
+       match on the shared prefix. -->
+  <rule id="100955" level="5">
+    <if_sid>100950,100957,100958</if_sid>
+    <field name="privacylens_event">^needs</field>
+    <description>PrivacyLens: document NOT searched (needs OCR): $(data.path)</description>
+  </rule>
+
+  <!-- Per-run heartbeat with totals ("scan_summary" / "scan-summary").
+       Level 3 so it is recorded and can feed dashboard panels ("last scan
+       per agent", findings trend) without paging anyone. -->
+  <rule id="100956" level="3">
+    <if_sid>100950,100957,100958</if_sid>
+    <field name="privacylens_event">^scan</field>
+    <description>PrivacyLens scan completed: $(data.findings) finding(s), $(data.files_scanned) files scanned, $(data.files_need_ocr) need OCR</description>
+  </rule>
+
+</group>

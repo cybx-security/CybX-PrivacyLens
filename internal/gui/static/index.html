@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PrivacyLens</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --ink: #1c2733; --muted: #66727f;
+    --accent: #0b5fff; --line: #e3e7ec;
+    --high: #c62828; --medium: #ef6c00; --low: #607d8b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--ink); }
+  header { background: var(--ink); color: #fff; padding: 22px 32px; display: flex; align-items: baseline; gap: 14px; }
+  header h1 { margin: 0; font-size: 20px; }
+  header .sub { color: #aab6c2; font-size: 13px; }
+  main { max-width: 1200px; margin: 0 auto; padding: 24px 32px 64px; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 20px; margin-bottom: 22px; }
+  label { display: block; font-size: 12.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin: 0 0 4px; }
+  textarea, input[type=text], input[type=number], select { width: 100%; padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; font-family: inherit; }
+  textarea { font-family: ui-monospace, Menlo, monospace; font-size: 13px; resize: vertical; }
+  .row { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 14px; }
+  .row > div { flex: 1; min-width: 160px; }
+  .check { display: flex; align-items: center; gap: 8px; margin-top: 26px; }
+  .check label { margin: 0; text-transform: none; font-size: 14px; font-weight: 500; color: var(--ink); }
+  .cats { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 4px 18px; margin-top: 6px; }
+  .cats .check { margin-top: 0; }
+  .cats-head { display: flex; align-items: baseline; gap: 10px; margin-top: 16px; }
+  .cats-head label { margin: 0; }
+  .cats-head a { font-size: 12.5px; color: var(--accent); text-decoration: none; }
+  .cats-head a:hover { text-decoration: underline; }
+  button { padding: 10px 22px; border: 0; border-radius: 8px; background: var(--accent); color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; }
+  button:disabled { background: #9db8e8; cursor: wait; }
+  button.ghost { background: #eef1f5; color: var(--ink); font-weight: 500; font-size: 13.5px; padding: 8px 14px; }
+  .actions { display: flex; align-items: center; gap: 14px; margin-top: 18px; }
+  #status { font-size: 14px; color: var(--muted); }
+  #status.error { color: var(--high); font-weight: 600; }
+  .cards { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 18px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; min-width: 130px; }
+  .card .num { font-size: 24px; font-weight: 700; }
+  .card .label { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .controls { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+  .controls input, .controls select { width: auto; }
+  .controls input { flex: 1; min-width: 200px; }
+  .doc { background: var(--card); border: 1px solid var(--line); border-radius: 10px; margin-bottom: 12px; overflow: hidden; }
+  .doc-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 14px; padding: 12px 16px; background: #eef1f5; border-bottom: 1px solid var(--line); }
+  .doc-head .path { font-family: ui-monospace, Menlo, monospace; font-size: 13px; font-weight: 600; word-break: break-all; }
+  .chip { display: inline-block; padding: 2px 10px; border-radius: 20px; background: #dbe4f0; color: var(--ink); font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 9px 16px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  tr:last-child td { border-bottom: none; }
+  td.mono { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; word-break: break-all; }
+  .badge { display: inline-block; padding: 2px 9px; border-radius: 20px; color: #fff; font-size: 11px; font-weight: 600; text-transform: uppercase; }
+  .badge.high { background: var(--high); } .badge.medium { background: var(--medium); } .badge.low { background: var(--low); }
+  .downloads { display: flex; gap: 10px; margin: 16px 0 0; flex-wrap: wrap; }
+  .hidden { display: none; }
+  .empty { padding: 40px; text-align: center; color: var(--muted); }
+  .spinner { display: inline-block; width: 16px; height: 16px; border: 2.5px solid #cdd6e0; border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -3px; margin-right: 8px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<header><h1>PrivacyLens</h1><span class="sub">PII discovery scanner · v__VERSION__</span></header>
+<main>
+  <div class="panel">
+    <label for="paths">Folders or files to scan (one per line)</label>
+    <textarea id="paths" rows="3" placeholder="__EXAMPLE_PATHS__">__DEFAULT_PATHS__</textarea>
+    <div class="row">
+      <div>
+        <label for="excludes">Exclude patterns (comma-separated)</label>
+        <input type="text" id="excludes" placeholder="node_modules, *.bak">
+      </div>
+      <div>
+        <label for="excludeEmails">Emails to ignore (exact address, or @domain for the whole domain)</label>
+        <input type="text" id="excludeEmails" placeholder="info@cybxsecurity.com, @cybxsecurity.com">
+      </div>
+      <div>
+        <label for="minconf">Minimum confidence</label>
+        <select id="minconf">
+          <option value="low" selected>Low — report everything</option>
+          <option value="medium">Medium and above</option>
+          <option value="high">High only</option>
+        </select>
+      </div>
+      <div>
+        <label for="maxsize">Max file size (MB)</label>
+        <input type="number" id="maxsize" value="50" min="1">
+      </div>
+      <div class="check">
+        <input type="checkbox" id="showfull">
+        <label for="showfull">Show full values (unmasked)</label>
+      </div>
+      <div class="check">
+        <input type="checkbox" id="ocr">
+        <label for="ocr">OCR scanned documents &amp; images (slow; needs Tesseract installed)</label>
+      </div>
+      <div class="check">
+        <input type="checkbox" id="includecloud">
+        <label for="includecloud">Include cloud-only files (forces OneDrive/iCloud to download each one)</label>
+      </div>
+      <div class="check">
+        <input type="checkbox" id="scanall">
+        <label for="scanall">Scan everything (also AppData, Recycle Bin, caches, node_modules)</label>
+      </div>
+      <div class="check">
+        <input type="checkbox" id="mail">
+        <label for="mail">Mail scan — only Outlook mailboxes (.pst/.ost), read message by message</label>
+      </div>
+      <div class="check">
+        <input type="checkbox" id="wazuhlog" checked>
+        <label for="wazuhlog">Write findings to the machine-wide Insights log the SIEM agent watches (falls back to your per-user log if unavailable)</label>
+      </div>
+    </div>
+    <div class="cats-head">
+      <label>PII types to look for</label>
+      <a href="#" id="catsAll">select all</a>
+      <a href="#" id="catsNone">select none</a>
+    </div>
+    <div class="cats" id="cats"></div>
+    <div class="actions">
+	      <button id="scanBtn">Scan</button>
+	      <button id="cancelBtn" class="ghost hidden" type="button">Cancel scan</button>
+	      <span id="status" role="status" aria-live="polite"></span>
+	      <div id="progTrack" class="hidden" role="progressbar" aria-label="Scan progress" aria-valuemin="0" aria-valuemax="100" style="flex:1;max-width:320px;height:6px;background:var(--line);border-radius:3px;overflow:hidden">
+        <div id="progFill" style="height:100%;width:0%;background:var(--accent);transition:width .4s"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="results" class="hidden">
+    <div class="cards" id="cards"></div>
+    <div class="controls">
+      <input id="search" type="search" placeholder="Filter by file, category, or context…">
+      <select id="catFilter"><option value="">All categories</option></select>
+      <select id="confFilter">
+        <option value="">All confidence</option>
+        <option value="high">High only</option>
+        <option value="medium">Medium+</option>
+      </select>
+    </div>
+    <div id="docs"></div>
+    <div id="logWarn" class="hidden" style="margin-top:16px;padding:12px 16px;border-radius:8px;background:#fdecea;border:1px solid #f5c6c1;font-size:13.5px"></div>
+    <div id="savedNote" class="hidden" style="margin-top:16px;padding:12px 16px;border-radius:8px;border:1px solid;font-size:13.5px"></div>
+    <div id="ocrNotice" class="hidden" style="margin-top:16px;padding:12px 16px;border-radius:8px;background:#fff7e6;border:1px solid #f2d59b;font-size:13.5px"></div>
+    <div class="downloads">
+      <button class="ghost" data-fmt="html">Download HTML report</button>
+      <button class="ghost" data-fmt="json">Download JSON</button>
+      <button class="ghost" data-fmt="csv">Download CSV</button>
+      <button class="ghost" data-fmt="syslog">Download syslog/CEF (Insights)</button>
+    </div>
+  </div>
+</main>
+<script>
+(function () {
+  var TOKEN = new URLSearchParams(location.search).get('token') || '';
+  // Keep the capability token out of browser history, copied URLs, and
+  // referrer data once this page has captured it in memory.
+  if (TOKEN && history.replaceState) { history.replaceState(null, '', location.pathname); }
+  // The URL no longer carries the token, so a page reload would lose it and
+  // every request would fail. sessionStorage keeps it for this tab only —
+  // it is scoped to this origin (this exact port) and gone when the tab
+  // closes.
+  try {
+    if (TOKEN) { sessionStorage.setItem('pl-token', TOKEN); }
+    else { TOKEN = sessionStorage.getItem('pl-token') || ''; }
+  } catch (e) { /* storage unavailable; the page works until reloaded */ }
+  var CATEGORIES = __CATEGORIES__;
+  var scanBtn = document.getElementById('scanBtn');
+  var cancelBtn = document.getElementById('cancelBtn');
+  var scanController = null;
+  var status = document.getElementById('status');
+  var results = document.getElementById('results');
+  var docs = document.getElementById('docs');
+  var cards = document.getElementById('cards');
+  var catFilter = document.getElementById('catFilter');
+  var lastFindings = [];
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+
+  function setStatus(msg, isError) {
+    status.className = isError ? 'error' : '';
+    status.innerHTML = msg;
+  }
+
+  // Live progress while /api/scan is in flight: poll /api/progress and show
+  // "file 139 of 9,022" plus a bar, so a big scan never looks hung.
+  var progTimer = null;
+  var progTrack = document.getElementById('progTrack');
+  var progFill = document.getElementById('progFill');
+  function fmtNum(n) { return Number(n || 0).toLocaleString(); }
+  function pollProgress() {
+    fetch('/api/progress', { headers: { 'X-PL-Token': TOKEN } })
+      .then(function (r) { return r.json(); })
+      .then(function (p) {
+        if (!progTimer || !p.active) { return; }
+        if (p.total === 0) {
+          setStatus('<span class="spinner"></span>Starting scan…');
+        } else if (p.done === 0) {
+          setStatus('<span class="spinner"></span>Finding files… ' + fmtNum(p.total) + ' so far');
+        } else if (p.done >= p.total) {
+          // Every file is scanned but /api/scan hasn't returned: the server
+          // is sorting, saving, and shipping the report.
+          setStatus('<span class="spinner"></span>Finalizing report… ' + fmtNum(p.findings) +
+            ' finding' + (p.findings === 1 ? '' : 's'));
+          progTrack.classList.remove('hidden');
+          progFill.style.width = '100%';
+	        } else {
+          setStatus('<span class="spinner"></span>Scanning file ' + fmtNum(p.done) + ' of ' + fmtNum(p.total) +
+            ' — ' + fmtNum(p.findings) + ' finding' + (p.findings === 1 ? '' : 's'));
+          progTrack.classList.remove('hidden');
+	          progFill.style.width = Math.min(100, (p.done / p.total) * 100) + '%';
+	          progTrack.setAttribute('aria-valuenow', String(Math.round(Math.min(100, (p.done / p.total) * 100))));
+        }
+      })
+      .catch(function () { /* transient poll failure; next tick retries */ });
+  }
+  function startProgress() {
+    progFill.style.width = '0%';
+    progTimer = setInterval(pollProgress, 500);
+  }
+  function stopProgress() {
+    clearInterval(progTimer);
+    progTimer = null;
+    progTrack.classList.add('hidden');
+  }
+
+  if (!TOKEN) {
+    setStatus('This page was opened without its access link. Close this tab and start PrivacyLens again.', true);
+    scanBtn.disabled = true;
+  }
+
+  var catsBox = document.getElementById('cats');
+  catsBox.innerHTML = CATEGORIES.map(function (c, i) {
+    return '<div class="check"><input type="checkbox" id="cat' + i + '" checked data-cat="' + esc(c) + '">' +
+      '<label for="cat' + i + '">' + esc(c) + '</label></div>';
+  }).join('');
+  function setAllCats(on) {
+    catsBox.querySelectorAll('input').forEach(function (el) { el.checked = on; });
+  }
+  document.getElementById('catsAll').addEventListener('click', function (e) { e.preventDefault(); setAllCats(true); });
+  document.getElementById('catsNone').addEventListener('click', function (e) { e.preventDefault(); setAllCats(false); });
+
+  scanBtn.addEventListener('click', function () {
+    var paths = document.getElementById('paths').value
+      .split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+    if (!paths.length) { setStatus('Enter at least one folder or file path.', true); return; }
+    var excludes = document.getElementById('excludes').value
+      .split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+    var excludeEmails = document.getElementById('excludeEmails').value
+      .split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+    var selCats = [].map.call(catsBox.querySelectorAll('input:checked'), function (el) { return el.dataset.cat; });
+    if (!selCats.length) { setStatus('Select at least one PII type to look for.', true); return; }
+    var body = {
+      paths: paths,
+      excludes: excludes,
+      exclude_emails: excludeEmails,
+      // All types checked = no restriction, so a future detector added
+      // server-side is never silently excluded by an old default.
+      categories: selCats.length === CATEGORIES.length ? [] : selCats,
+      min_confidence: document.getElementById('minconf').value,
+      max_size_mb: parseInt(document.getElementById('maxsize').value, 10) || 50,
+      show_full: document.getElementById('showfull').checked,
+      ocr: document.getElementById('ocr').checked,
+      include_cloud: document.getElementById('includecloud').checked,
+      scan_all: document.getElementById('scanall').checked,
+      mail: document.getElementById('mail').checked,
+      wazuh_log: document.getElementById('wazuhlog').checked
+    };
+	    scanBtn.disabled = true;
+	    cancelBtn.classList.remove('hidden');
+	    scanController = new AbortController();
+    setStatus('<span class="spinner"></span>Starting scan…');
+    startProgress();
+    fetch('/api/scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-PL-Token': TOKEN },
+	      body: JSON.stringify(body),
+	      signal: scanController.signal
+    }).then(function (resp) {
+      if (!resp.ok) { return resp.text().then(function (t) { throw new Error(t); }); }
+      return resp.json();
+    }).then(render).catch(function (err) {
+      setStatus('Scan failed: ' + esc(err.message), true);
+      results.classList.add('hidden');
+	    }).finally(function () {
+	      stopProgress(); scanBtn.disabled = false;
+	      cancelBtn.classList.add('hidden'); scanController = null;
+	    });
+	  });
+	  cancelBtn.addEventListener('click', function () {
+	    if (scanController) { setStatus('Cancelling scan…'); scanController.abort(); }
+	  });
+
+  function render(rep) {
+    lastFindings = rep.findings || [];
+    var s = rep.stats || {};
+    setStatus('Scanned ' + (s.files_scanned || 0) + ' files in ' + esc(rep.duration) +
+      ' — ' + lastFindings.length + ' finding' + (lastFindings.length === 1 ? '' : 's') +
+      (rep.masked ? ' (values masked)' : ' (FULL VALUES SHOWN)'), false);
+
+    var byCat = {};
+    lastFindings.forEach(function (f) { byCat[f.category] = (byCat[f.category] || 0) + 1; });
+    var catNames = Object.keys(byCat).sort(function (a, b) { return byCat[b] - byCat[a]; });
+
+    cards.innerHTML =
+      '<div class="card"><div class="num">' + lastFindings.length + '</div><div class="label">Total findings</div></div>' +
+      '<div class="card"><div class="num">' + (s.files_scanned || 0) + '</div><div class="label">Files scanned</div></div>' +
+      '<div class="card"><div class="num">' + (s.files_skipped || 0) + '</div><div class="label">Files skipped</div></div>' +
+      ((s.files_need_ocr || 0) > 0
+        ? '<div class="card"><div class="num" style="color:var(--medium)">' + s.files_need_ocr + '</div><div class="label">Need OCR (not searched)</div></div>'
+        : '') +
+      ((s.files_cloud_skipped || 0) > 0
+        ? '<div class="card"><div class="num" style="color:var(--medium)">' + s.files_cloud_skipped + '</div><div class="label">Cloud-only (not searched)</div></div>'
+        : '') +
+      ((s.files_mail_skipped || 0) > 0
+        ? '<div class="card"><div class="num" style="color:var(--medium)">' + s.files_mail_skipped + '</div><div class="label">Mail stores (not searched)</div></div>'
+        : '') +
+      catNames.map(function (c) {
+        return '<div class="card"><div class="num">' + byCat[c] + '</div><div class="label">' + esc(c) + '</div></div>';
+      }).join('');
+
+    catFilter.innerHTML = '<option value="">All categories</option>' +
+      catNames.map(function (c) { return '<option>' + esc(c) + '</option>'; }).join('');
+
+    if (!lastFindings.length) {
+	      var gaps = (s.files_need_ocr || 0) + (s.files_cloud_skipped || 0) +
+	        (s.files_mail_skipped || 0) + (s.files_errored || 0);
+	      docs.innerHTML = '<div class="empty">No PII matches found in searched content.' +
+	        (gaps ? ' Review the coverage gaps below before treating this scan as clean.' : '') + '</div>';
+    } else {
+      // One entry per document listing everything found in it, instead of
+      // interleaved per-finding rows.
+      var groups = [], byPath = {};
+      lastFindings.forEach(function (f) {
+        if (!(f.path in byPath)) { byPath[f.path] = groups.length; groups.push({ path: f.path, findings: [] }); }
+        groups[byPath[f.path]].findings.push(f);
+      });
+      docs.innerHTML = groups.map(function (g) {
+        var counts = {};
+        g.findings.forEach(function (f) { counts[f.category] = (counts[f.category] || 0) + 1; });
+        var chips = Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a]; })
+          .map(function (c) { return '<span class="chip">' + esc(c) + ' ×' + counts[c] + '</span>'; }).join('');
+        var rows = g.findings.map(function (f) {
+          var loc = f.folder || f.subject
+            ? esc(f.folder || '') + ' / ' + esc(f.subject || '') + ' · msg ' + f.line
+            : (f.page ? 'page ' + f.page + ', line ' + f.line : 'line ' + f.line);
+          return '<tr data-cat="' + esc(f.category) + '" data-conf="' + esc(f.confidence) + '">' +
+            '<td style="white-space:nowrap;font-weight:600;font-size:13px">' + esc(f.category) + '</td>' +
+            '<td><span class="badge ' + esc(f.confidence) + '">' + esc(f.confidence) + '</span></td>' +
+            '<td style="white-space:nowrap;font-size:13px">' + loc + '</td>' +
+            '<td class="mono" style="white-space:nowrap">' + esc(f.match) + '</td>' +
+            '<td class="mono" style="color:#37474f">' + esc(f.context) + '</td></tr>';
+        }).join('');
+        return '<div class="doc"><div class="doc-head"><span class="path">' + esc(g.path) + '</span>' + chips + '</div>' +
+          '<table><thead><tr><th>Category</th><th>Confidence</th><th>Location</th><th>Match</th><th>Context</th></tr></thead>' +
+          '<tbody>' + rows + '</tbody></table></div>';
+      }).join('');
+    }
+    var logWarn = document.getElementById('logWarn');
+    var warns = [];
+    if (rep.log_warning) { warns.push('<strong>⚠ ' + esc(rep.log_warning) + '</strong>'); }
+    if (rep.save_error) { warns.push('Could not auto-save results: ' + esc(rep.save_error)); }
+    if (warns.length) {
+      logWarn.innerHTML = warns.join('<br>');
+      logWarn.classList.remove('hidden');
+    } else {
+      logWarn.classList.add('hidden');
+    }
+
+    var savedNote = document.getElementById('savedNote');
+    if (rep.saved) {
+      savedNote.innerHTML = '<strong>Automatically saved:</strong>' +
+        '<ul style="margin:6px 0 0;padding-left:20px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px">' +
+        '<li>Report (open in browser): ' + esc(rep.saved.html) + '</li>' +
+        '<li>Report (data): ' + esc(rep.saved.json) + '</li>' +
+        '<li>Event log (SIEM/Insights): ' + esc(rep.saved.findings_log) + '</li></ul>';
+      savedNote.style.background = '#e9f7ef'; savedNote.style.borderColor = '#b9e3c8';
+      savedNote.classList.remove('hidden');
+    } else {
+      savedNote.classList.add('hidden');
+    }
+
+    var ocrNotice = document.getElementById('ocrNotice');
+    var ocrFiles = (rep.stats && rep.stats.need_ocr_files) || [];
+    var mailFiles = (rep.stats && rep.stats.mail_store_files) || [];
+    var notices = [];
+    if (ocrFiles.length) {
+      notices.push('<strong>' + ocrFiles.length +
+        ' document(s) were NOT searched</strong> — scans/images with no text layer (enable the OCR option, with Tesseract installed, to read them):' +
+        '<ul style="margin:8px 0 0;padding-left:20px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px">' +
+        ocrFiles.map(function (f) { return '<li>' + esc(f) + '</li>'; }).join('') + '</ul>');
+    }
+    if (mailFiles.length) {
+      notices.push('<strong>' + mailFiles.length +
+        ' Outlook mail store(s) were NOT searched</strong> — mailbox files (.pst/.ost) are only opened by a targeted mail scan (tick “Mail scan” and re-run):' +
+        '<ul style="margin:8px 0 0;padding-left:20px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px">' +
+        mailFiles.map(function (f) { return '<li>' + esc(f) + '</li>'; }).join('') + '</ul>');
+    }
+    if (notices.length) {
+      ocrNotice.innerHTML = notices.join('<div style="margin-top:10px"></div>');
+      ocrNotice.classList.remove('hidden');
+    } else {
+      ocrNotice.classList.add('hidden');
+    }
+    results.classList.remove('hidden');
+    applyFilters();
+  }
+
+  function applyFilters() {
+    var q = document.getElementById('search').value.toLowerCase();
+    var c = catFilter.value;
+    var cf = document.getElementById('confFilter').value;
+    docs.querySelectorAll('.doc').forEach(function (doc) {
+      var pathMatch = !q || doc.querySelector('.doc-head').textContent.toLowerCase().indexOf(q) !== -1;
+      var visible = 0;
+      doc.querySelectorAll('tr[data-cat]').forEach(function (tr) {
+        var ok = (pathMatch || tr.textContent.toLowerCase().indexOf(q) !== -1) &&
+          (!c || tr.dataset.cat === c) &&
+          (!cf || (cf === 'high' ? tr.dataset.conf === 'high' : tr.dataset.conf !== 'low'));
+        tr.style.display = ok ? '' : 'none';
+        if (ok) visible++;
+      });
+      doc.style.display = visible ? '' : 'none';
+    });
+  }
+  document.getElementById('search').addEventListener('input', applyFilters);
+  catFilter.addEventListener('change', applyFilters);
+  document.getElementById('confFilter').addEventListener('change', applyFilters);
+
+  document.querySelectorAll('.downloads button').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      fetch('/api/download?format=' + encodeURIComponent(btn.dataset.fmt), {
+        headers: { 'X-PL-Token': TOKEN }
+      }).then(function (resp) {
+        if (!resp.ok) { return resp.text().then(function (t) { throw new Error(t); }); }
+        var cd = resp.headers.get('Content-Disposition') || '';
+        var m = /filename=([^;]+)/.exec(cd);
+        return resp.blob().then(function (blob) {
+          var a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = m ? m[1].replace(/[\"']/g, '') : 'privacylens-report';
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+        });
+      }).catch(function (err) { setStatus('Download failed: ' + esc(err.message), true); });
+    });
+  });
+})();
+</script>
+</body>
+</html>

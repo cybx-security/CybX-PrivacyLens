@@ -1,0 +1,73 @@
+<!-- PrivacyLens custom decoders for the Insights MANAGER.
+     Install to /var/ossec/etc/decoders/privacylens_decoders.xml, then:
+       systemctl restart wazuh-manager
+
+     Why these exist: PrivacyLens events reach Insights over two transports and
+     in two payload formats, and only one combination decodes out of the box.
+
+       1. Agent tails the NDJSON findings file (log_format json)
+          -> decoded by the Insights manager's built-in JSON decoder. No custom decoder
+             needed; rules match with <decoded_as>json</decoded_as>.
+       2. Network syslog (-syslog-addr) or an agent tailing the CEF file
+          (log_format syslog)
+          -> events carry an RFC 3164 header ("... privacylens: PAYLOAD").
+             The pre-decoder extracts program_name=privacylens; the decoders
+             below take it from there so every event completes phase 2
+             (decoding) and reaches phase 3 (rule matching).
+             The <PRI> tag ("<133>") exists only on the network path, where
+             remoted strips it before pre-decoding. CEF file output is
+             written WITHOUT it (since 0.8.1): a tailed line starting with
+             "<133>" would fail pre-decoding and never reach these decoders.
+
+     OS_Regex notes for future edits: "\|" is a literal pipe (bare | is
+     alternation), "\." matches ANY character (a bare . is a literal dot),
+     and "(...)" captures into the <order> fields. -->
+
+<decoder name="privacylens">
+  <program_name>^privacylens$</program_name>
+</decoder>
+
+<!-- JSON payload wrapped in a syslog header (network delivery with
+     -syslog-format json). Hands the payload to the JSON plugin so the
+     fields come out identical to the agent-tailed NDJSON path. -->
+<decoder name="privacylens-json">
+  <parent>privacylens</parent>
+  <prematch>^{"</prematch>
+  <plugin_decoder>JSON_Decoder</plugin_decoder>
+</decoder>
+
+<!-- CEF: PII finding.
+     CEF:0|CybX|PrivacyLens|0.6.0|ssn|PII detected: SSN|8|filePath=...
+     fname=... cn1Label=lineNumber cn1=14 cs1Label=category cs1=SSN
+     cs2Label=confidence cs2=high cs3Label=match cs3=***-**-9999 msg=... -->
+<decoder name="privacylens-cef-finding">
+  <parent>privacylens</parent>
+  <prematch>PII detected: </prematch>
+  <regex>^CEF:0\|\.+\|PrivacyLens\|\.+\|(\.+)\|PII detected: \.+\|\d+\|filePath=(\.+) fname=\.+ cn1Label=lineNumber cn1=(\d+) cs1Label=category cs1=(\.+) cs2Label=confidence cs2=(\w+) cs3Label=match cs3=(\S+) msg=(\.*)$</regex>
+  <order>category_id, path, line, category, confidence, match, context</order>
+</decoder>
+
+<!-- CEF: document that could NOT be searched (scan/image-only, needs OCR).
+     CEF:0|CybX|PrivacyLens|0.6.0|needs-ocr|Document not searched -
+     needs OCR|5|filePath=... fname=... msg=... -->
+<!-- The extracted field is named privacylens_event (not event_type) to
+     line up with the JSON payloads, which avoid "event_type" because the
+     stock Suricata base rule 86600 captures any JSON event carrying
+     timestamp + event_type before custom rules can match. -->
+<decoder name="privacylens-cef-ocr">
+  <parent>privacylens</parent>
+  <prematch>Document not searched</prematch>
+  <regex>^CEF:0\|\.+\|PrivacyLens\|\.+\|(\S+)\|\.+\|\d+\|filePath=(\.+) fname=(\.+) msg=</regex>
+  <order>privacylens_event, path, file_name</order>
+</decoder>
+
+<!-- CEF: per-run scan summary.
+     CEF:0|CybX|PrivacyLens|0.6.0|scan-summary|PII scan completed|3|
+     cn1Label=findings cn1=24 cn2Label=filesScanned cn2=6
+     cn3Label=filesNeedOcr cn3=1 msg=roots: ... -->
+<decoder name="privacylens-cef-summary">
+  <parent>privacylens</parent>
+  <prematch>PII scan completed</prematch>
+  <regex>^CEF:0\|\.+\|PrivacyLens\|\.+\|(\S+)\|\.+\|\d+\|cn1Label=findings cn1=(\d+) cn2Label=filesScanned cn2=(\d+) cn3Label=filesNeedOcr cn3=(\d+) msg=(\.*)$</regex>
+  <order>privacylens_event, findings, files_scanned, files_need_ocr, context</order>
+</decoder>

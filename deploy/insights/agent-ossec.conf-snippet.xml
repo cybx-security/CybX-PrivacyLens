@@ -1,0 +1,27 @@
+<!-- Add inside <ossec_config> in the AGENT's ossec.conf on each scanned
+     machine. Points the agent at the NDJSON findings file PrivacyLens runs
+     append to (one JSON event per line; appending guarantees the agent
+     sees every event exactly once). Restart the agent after editing.
+
+     The file must live at a static, non-per-user path. When PrivacyLens
+     runs with no output flags it auto-saves to the CURRENT USER's data
+     folder (%LOCALAPPDATA%\PrivacyLens\logs\findings.json on Windows),
+     which moves per account. Pin it to the path below either way:
+       - set the PRIVACYLENS_DATA_DIR system environment variable to
+         C:\ProgramData\PrivacyLens (flagless runs then land here), or
+       - run with: -syslog-out C:\ProgramData\PrivacyLens\logs\findings.json
+         -syslog-format json  (or the same via a config manifest). -->
+
+<!-- Windows -->
+<localfile>
+  <log_format>json</log_format>
+  <location>C:\ProgramData\PrivacyLens\logs\findings.json</location>
+</localfile>
+
+<!-- Linux / macOS -->
+<!--
+<localfile>
+  <log_format>json</log_format>
+  <location>/var/log/privacylens/findings.json</location>
+</localfile>
+-->

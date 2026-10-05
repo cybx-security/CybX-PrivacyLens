@@ -1,0 +1,11 @@
+/privacylens
+/privacylens.exe
+/dist/
+*.html
+# ...except the GUI page, which is compiled into the binary (go:embed).
+!/internal/gui/static/index.html
+*.json.report
+report.json
+report.csv
+.DS_Store
+.claude/settings.local.json

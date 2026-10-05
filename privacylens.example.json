@@ -1,0 +1,22 @@
+{
+  "paths": [
+    "/Users/shared/finance",
+    "/Users/shared/hr"
+  ],
+  "excludes": [
+    "node_modules",
+    "*.bak",
+    "Cache"
+  ],
+  "categories": [],
+  "exclude_emails": [],
+  "min_confidence": "medium",
+  "max_size_mb": 50,
+  "memory_budget_mb": 256,
+  "show_full": false,
+  "html": "privacylens-report.html",
+  "json": "privacylens-report.json",
+  "syslog_out": "/var/log/privacylens/findings.json",
+  "syslog_format": "json",
+  "quiet": true
+}

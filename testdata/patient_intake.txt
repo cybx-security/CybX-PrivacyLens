@@ -1,0 +1,8 @@
+PATIENT INTAKE SUMMARY
+
+Patient: Robert Placeholder
+Date of birth: 07/22/1961
+MRN: 8675309
+Medicare MBI: 1EG4-TE5-MK73
+Primary diagnosis: E11.9 (type 2 diabetes mellitus)
+Emergency contact phone: (555) 123-4567
