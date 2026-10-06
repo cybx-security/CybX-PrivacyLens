@@ -143,7 +143,7 @@ const doc = new Document({
         new Paragraph({ spacing: { before: 300, after: 0 }, alignment: AlignmentType.CENTER,
           children: [new TextRun({ text: "Administrator & User Guide", size: 28 })] }),
         new Paragraph({ spacing: { before: 2600, after: 0 }, alignment: AlignmentType.CENTER,
-          children: [new TextRun({ text: "Version 0.9.7", size: 22, color: "66727F" })] }),
+          children: [new TextRun({ text: "Version 0.9.8", size: 22, color: "66727F" })] }),
         new Paragraph({ spacing: { before: 60, after: 0 }, alignment: AlignmentType.CENTER,
           children: [new TextRun({ text: "July 2026", size: 22, color: "66727F" })] }),
         new Paragraph({ spacing: { before: 60, after: 0 }, alignment: AlignmentType.CENTER,
@@ -165,7 +165,7 @@ const doc = new Document({
             border: { bottom: { style: BorderStyle.SINGLE, size: 4, color: "CCCCCC", space: 4 } },
             children: [
               new TextRun({ text: "PrivacyLens Administrator & User Guide", size: 17, color: "66727F" }),
-              new TextRun({ text: "\tv0.9.7", size: 17, color: "66727F" }),
+              new TextRun({ text: "\tv0.9.8", size: 17, color: "66727F" }),
             ],
           })],
         }),
@@ -317,7 +317,7 @@ const doc = new Document({
           ["Manifest field", "Meaning"],
           [
             [[mono("paths")], "Folders or files to scan. Each is crawled recursively to full depth."],
-            [[mono("excludes")], "Patterns to skip. Matched against file and folder names (globs like *.bak) and path substrings; matching a folder prunes its whole subtree."],
+            [[mono("excludes")], "Patterns to skip. Matched against file and folder names (globs like *.bak) and path substrings, ignoring case (*.png also skips Photo.PNG); matching a folder prunes its whole subtree."],
             [[mono("min_confidence")], "“low”, “medium”, or “high” — the reporting threshold."],
             [[mono("max_size_mb")], "Skip files larger than this (default 50)."],
             [[mono("show_full")], "true = unmasked values in every output. Default false."],

@@ -560,3 +560,36 @@ func TestUnreadableDocsReported(t *testing.T) {
 		t.Errorf("unreadable docs = %d (%v), skipped = %d; want 2 and 1", stats.FilesDocs, stats.UnreadDocs, stats.FilesSkipped)
 	}
 }
+
+// Exclude patterns ignore case: "*.png" must skip Screenshot.PNG too, and a
+// folder name typed in the wrong case must still prune the folder.
+func TestExcludesIgnoreCase(t *testing.T) {
+	t.Setenv("PRIVACYLENS_DATA_DIR", t.TempDir())
+	root := t.TempDir()
+	const pii = "SSN: 219-09-9999\n"
+	writeFile(t, filepath.Join(root, "keep.txt"), pii)
+	for _, name := range []string{"a.png", "B.PNG", "sub/C.Png", "Backups/old.txt", "backups2/x.txt"} {
+		writeFile(t, filepath.Join(root, filepath.FromSlash(name)), pii)
+	}
+	findings, stats, err := Scan([]string{root}, Options{
+		Workers: 1, MaxSizeBytes: 1 << 20, Excludes: []string{"*.PNG", "backups"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(findings) != 1 || filepath.Base(findings[0].Path) != "keep.txt" {
+		t.Errorf("findings = %+v, want only keep.txt", findings)
+	}
+	// Three image files skipped by name. Both folders are pruned (Backups
+	// by name, backups2 as a path substring), so their files are never
+	// reached and never counted.
+	if stats.FilesSkipped != 3 {
+		t.Errorf("FilesSkipped = %d, want 3", stats.FilesSkipped)
+	}
+}
+
+func TestErrorsAreOneLine(t *testing.T) {
+	if got := oneLine("ocr failed: Error in findFileFormatStream\n  second line\r\n\tthird"); got != "ocr failed: Error in findFileFormatStream second line third" {
+		t.Errorf("oneLine = %q", got)
+	}
+}

@@ -296,7 +296,7 @@ func ScanContext(ctx context.Context, roots []string, opts Options) ([]Finding, 
 		switch {
 		case r.err != nil:
 			stats.FilesErrored++
-			stats.Errors = append(stats.Errors, fmt.Sprintf("%s: %v", r.path, r.err))
+			stats.Errors = append(stats.Errors, fmt.Sprintf("%s: %s", r.path, oneLine(r.err.Error())))
 		case r.needsOCR:
 			stats.FilesNeedOCR++
 			stats.NeedOCR = append(stats.NeedOCR, r.path)
@@ -313,7 +313,7 @@ func ScanContext(ctx context.Context, roots []string, opts Options) ([]Finding, 
 			stats.FilesSkipped++
 		default:
 			if r.warn != nil {
-				stats.Errors = append(stats.Errors, fmt.Sprintf("%s: partially read: %v", r.path, r.warn))
+				stats.Errors = append(stats.Errors, fmt.Sprintf("%s: partially read: %s", r.path, oneLine(r.warn.Error())))
 			}
 			stats.FilesScanned++
 			if r.ocr {
@@ -432,20 +432,39 @@ func walkableType(t fs.FileMode) bool {
 	return t&(fs.ModeSymlink|fs.ModeDevice|fs.ModeNamedPipe|fs.ModeSocket) == 0
 }
 
-// cleanExcludes drops blank patterns. An empty pattern is a substring of
+// oneLine flattens a multi-line error (external tools such as tesseract
+// print several lines of diagnostics) so every entry in Stats.Errors is one
+// line in the console and one event in a log.
+func oneLine(s string) string {
+	fields := strings.Fields(s)
+	return strings.Join(fields, " ")
+}
+
+// cleanExcludes drops blank patterns and lowercases the rest for the
+// case-insensitive matching in excluded. An empty pattern is a substring of
 // every path, so a stray "" in a manifest (or -exclude "$UNSET_VAR") would
 // exclude every file and report a clean scan of nothing.
 func cleanExcludes(patterns []string) []string {
 	var out []string
 	for _, p := range patterns {
 		if strings.TrimSpace(p) != "" {
-			out = append(out, p)
+			out = append(out, strings.ToLower(p))
 		}
 	}
 	return out
 }
 
+// excluded reports whether a file or directory matches an exclude pattern:
+// a glob against its name, or a substring of its path. Matching ignores
+// case on every platform — "*.png" must skip Screenshot.PNG and IMG.Png,
+// which is what cameras and Windows produce; a user who types "*.png"
+// means "PNG files", not "files whose extension happens to be lowercase".
+// patterns are already lowercased by cleanExcludes.
 func excluded(path, name string, patterns []string) bool {
+	if len(patterns) == 0 {
+		return false
+	}
+	name, path = strings.ToLower(name), strings.ToLower(path)
 	for _, pat := range patterns {
 		if ok, _ := filepath.Match(pat, name); ok {
 			return true

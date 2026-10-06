@@ -197,7 +197,8 @@ Every path you give is crawled **recursively to full depth** — point it at
 `C:\Users` or `/home` and it walks the entire subtree. Along the way it:
 
 - skips `.git` directories and anything matching `-exclude` patterns
-  (matched against both directory and file names, so one `-exclude Cache`
+  (matched against both directory and file names, ignoring case — `*.png`
+  also skips `Screenshot.PNG` — so one `-exclude Cache`
   prunes whole subtrees)
 - skips a built-in list of app-state and cache folders by default —
   `AppData`, `$Recycle.Bin`, `System Volume Information`, `node_modules`,
@@ -399,7 +400,7 @@ calls the old `C:\ProgramData\PrivacyLens\privacylens.exe` path, update it.
 is it scanning, are findings reaching Insights?" in plain language:
 
 ```
-PrivacyLens 0.9.7 - status of this computer
+PrivacyLens 0.9.8 - status of this computer
 
   ok   Program        C:\Program Files\PrivacyLens\privacylens.exe
   ok   Scan settings  C:\ProgramData\PrivacyLens\scan.json - scans: C:\Users
