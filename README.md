@@ -400,7 +400,7 @@ calls the old `C:\ProgramData\PrivacyLens\privacylens.exe` path, update it.
 is it scanning, are findings reaching Insights?" in plain language:
 
 ```
-PrivacyLens 0.9.8 - status of this computer
+PrivacyLens 0.9.9 - status of this computer
 
   ok   Program        C:\Program Files\PrivacyLens\privacylens.exe
   ok   Scan settings  C:\ProgramData\PrivacyLens\scan.json - scans: C:\Users

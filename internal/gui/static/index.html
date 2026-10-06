@@ -182,11 +182,29 @@
   var cards = document.getElementById('cards');
   var catFilter = document.getElementById('catFilter');
   var lastFindings = [];
+  var excludesUsed = [];
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
     });
+  }
+
+  // Exclusions are "comma-separated", but people also type "*.png *.jpg" or
+  // use semicolons or new lines. Split on all of those - and on spaces too
+  // when every piece is clearly a pattern (has * or ? or starts with a
+  // dot), so "*.png *.jpg" becomes two patterns while a folder name with a
+  // space in it, like "Old Backups", stays whole.
+  function splitPatterns(text) {
+    var out = [];
+    text.split(/[,;\n]/).forEach(function (item) {
+      item = item.trim();
+      if (!item) { return; }
+      var parts = item.split(/\s+/);
+      var allPatterns = parts.length > 1 && parts.every(function (p) { return /[*?]/.test(p) || p.charAt(0) === '.'; });
+      if (allPatterns) { parts.forEach(function (p) { out.push(p); }); } else { out.push(item); }
+    });
+    return out;
   }
 
   function setStatus(msg, isError) {
@@ -283,8 +301,8 @@
     var paths = document.getElementById('paths').value
       .split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
     if (!paths.length) { setStatus('Enter at least one folder or file path.', true); return; }
-    var excludes = document.getElementById('excludes').value
-      .split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+    var excludes = splitPatterns(document.getElementById('excludes').value);
+    excludesUsed = excludes;
     var excludeEmails = document.getElementById('excludeEmails').value
       .split(',').map(function (s) { return s.trim(); }).filter(Boolean);
     var selCats = [].map.call(catsBox.querySelectorAll('input:checked'), function (el) { return el.dataset.cat; });
@@ -353,6 +371,9 @@
         : '') +
       ((s.files_mail_skipped || 0) > 0
         ? '<div class="card"><div class="num" style="color:var(--medium)">' + s.files_mail_skipped + '</div><div class="label">Mail stores (not searched)</div></div>'
+        : '') +
+      ((s.files_errored || 0) > 0
+        ? '<div class="card"><div class="num" style="color:var(--medium)">' + s.files_errored + '</div><div class="label">Unreadable (not searched)</div></div>'
         : '') +
       ((s.files_unreadable_docs || 0) > 0
         ? '<div class="card"><div class="num" style="color:var(--medium)">' + s.files_unreadable_docs + '</div><div class="label">Unreadable documents (not searched)</div></div>'
@@ -423,6 +444,10 @@
     }
 
     var ocrNotice = document.getElementById('ocrNotice');
+    // The status line says how much of the tree the exclusions removed.
+    var skippedNote = (s.files_skipped || 0) > 0 && excludesUsed.length
+      ? ' - ' + s.files_skipped + ' skipped (excluded or not a document type)' : '';
+    status.innerHTML += esc(skippedNote);
     var ocrFiles = (rep.stats && rep.stats.need_ocr_files) || [];
     var mailFiles = (rep.stats && rep.stats.mail_store_files) || [];
     var notices = [];
@@ -444,6 +469,15 @@
         ' document(s) were NOT searched</strong> — they are in formats PrivacyLens cannot open (old-style .doc/.xls/.ppt, Outlook .msg, OpenDocument). Re-save them as .docx, .xlsx, or PDF to include them:' +
         '<ul style="margin:8px 0 0;padding-left:20px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px">' +
         docFiles.map(function (f) { return '<li>' + esc(f) + '</li>'; }).join('') + '</ul>');
+    }
+    var errs = (rep.stats && rep.stats.errors) || [];
+    if (errs.length) {
+      var shown = errs.slice(0, 20);
+      notices.push('<strong>' + errs.length +
+        ' file(s) could not be read</strong> - permission denied, damaged, or a format error - so their contents were NOT searched' +
+        (errs.length > shown.length ? ' (first ' + shown.length + ' shown; the JSON report lists them all)' : '') + ':' +
+        '<ul style="margin:8px 0 0;padding-left:20px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px">' +
+        shown.map(function (e) { return '<li>' + esc(e) + '</li>'; }).join('') + '</ul>');
     }
     if (notices.length) {
       ocrNotice.innerHTML = notices.join('<div style="margin-top:10px"></div>');
