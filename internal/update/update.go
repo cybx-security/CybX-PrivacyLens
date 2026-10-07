@@ -387,19 +387,62 @@ func isElevated() bool {
 	return true
 }
 
+// InstalledApp is where the macOS package puts the app.
+const InstalledApp = "/Applications/PrivacyLens.app"
+
 // Relaunch starts the freshly installed GUI launcher on macOS (the Windows
-// wizard relaunches by itself). It reports whether it did: a server
-// started from a terminal rather than the app is not relaunched.
-func Relaunch() bool {
-	if runtime.GOOS != "darwin" {
-		return false
+// wizard relaunches by itself) and returns the bundle it opened. It opens
+// the installed copy in Applications — the one the package just updated —
+// never the bundle this process happens to run from: someone who opened
+// PrivacyLens out of a Downloads folder would otherwise get that old copy
+// back. A server started from a terminal rather than an app is not
+// relaunched ("" and false).
+func Relaunch() (opened string, ok bool) {
+	if runtime.GOOS != "darwin" || AppBundle() == "" {
+		return "", false
 	}
-	app := AppBundle()
-	if app == "" {
-		return false
+	app := InstalledApp
+	if _, err := os.Stat(app); err != nil {
+		app = AppBundle()
 	}
 	// -n: a new instance even though this one is still running.
-	return exec.Command("open", "-n", app).Start() == nil
+	if err := exec.Command("open", "-n", app).Start(); err != nil {
+		return "", false
+	}
+	return app, true
+}
+
+var plistVersion = regexp.MustCompile(`<key>CFBundleShortVersionString</key>\s*<string>([^<]+)</string>`)
+
+// InstalledAppVersion reads the version of an app bundle from its
+// Info.plist, or "" if it cannot.
+func InstalledAppVersion(app string) string {
+	b, err := os.ReadFile(filepath.Join(app, "Contents", "Info.plist"))
+	if err != nil {
+		return ""
+	}
+	if m := plistVersion.FindSubmatch(b); m != nil {
+		return strings.TrimSpace(string(m[1]))
+	}
+	return ""
+}
+
+// StrayCopy reports, on macOS, that this process runs from an app bundle
+// other than the installed one while an installed copy exists — a copy
+// left in a Downloads folder, typically. Updates go to the installed copy,
+// so the person should be told to use that one.
+func StrayCopy() (running, installed string) {
+	if runtime.GOOS != "darwin" {
+		return "", ""
+	}
+	app := AppBundle()
+	if app == "" || app == InstalledApp {
+		return "", ""
+	}
+	if _, err := os.Stat(InstalledApp); err != nil {
+		return "", ""
+	}
+	return app, InstalledApp
 }
 
 // AppBundle returns the .app bundle this process runs from, or "".

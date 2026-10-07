@@ -17,10 +17,12 @@ import (
 // Indirections so tests can drive the update flow without GitHub, a
 // download, or an installer.
 var (
-	checkRelease    = update.Check
-	downloadRelease = update.Download
-	installRelease  = update.Install
-	relaunchApp     = update.Relaunch
+	checkRelease     = update.Check
+	downloadRelease  = update.Download
+	installRelease   = update.Install
+	relaunchApp      = update.Relaunch
+	installedVersion = update.InstalledAppVersion
+	strayCopy        = update.StrayCopy
 )
 
 // updateState is what /api/update/status reports while an update runs.
@@ -64,8 +66,16 @@ func (s *server) handleUpdateCheck(w http.ResponseWriter, r *http.Request) {
 		Size        int64     `json:"size,omitempty"`
 		Manual      bool      `json:"manual"` // no silent installer on this OS
 		Error       string    `json:"error,omitempty"`
+		// StrayCopy is set when this window runs from a bundle other than
+		// the installed one (an old download): updates land in the
+		// installed copy, so the person should switch to it.
+		StrayCopy        string `json:"stray_copy,omitempty"`
+		InstalledVersion string `json:"installed_version,omitempty"`
 	}
 	out := reply{Current: s.opts.Version, Manual: runtime.GOOS != "darwin" && runtime.GOOS != "windows"}
+	if running, installed := strayCopy(); running != "" {
+		out.StrayCopy, out.InstalledVersion = running, update.InstalledAppVersion(installed)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	if s.opts.UpdateRepo == "" {
 		out.Error = "this build has no update source configured"
@@ -188,13 +198,23 @@ func (s *server) runUpdate(rel *update.Release) {
 		return
 	}
 	os.RemoveAll(dir)
+	// Trust, but verify: the installer ran, so the installed app must now
+	// carry the new version. If it does not, say so instead of reopening
+	// an old copy and calling it done.
+	if got := installedVersion(update.InstalledApp); got != "" && update.CompareVersions(got, rel.Version) < 0 {
+		fail(fmt.Errorf("the installer finished but %s is still version %s, not %s; run the installer from the download page, then open PrivacyLens from Applications", update.InstalledApp, got, rel.Version))
+		return
+	}
 	s.upd.set(func(st *updateState) { st.Phase, st.Message = "relaunching", "Installed. Opening the new version…" })
-	reopened := relaunchApp()
+	opened, reopened := relaunchApp()
 	s.upd.set(func(st *updateState) {
 		st.Phase = "done"
-		if reopened {
+		switch {
+		case reopened && update.AppBundle() != "" && opened != update.AppBundle():
+			st.Message = fmt.Sprintf("Updated to v%s and reopened from %s in a new browser tab — you can close this one. This window was running an old copy at %s; delete that copy so it is not opened again.", rel.Version, opened, update.AppBundle())
+		case reopened:
 			st.Message = fmt.Sprintf("Updated to v%s. PrivacyLens has reopened in a new browser tab — you can close this one.", rel.Version)
-		} else {
+		default:
 			st.Message = fmt.Sprintf("Updated to v%s. Start PrivacyLens again to use the new version.", rel.Version)
 		}
 	})
