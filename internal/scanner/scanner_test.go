@@ -270,6 +270,7 @@ func TestScanFollowsSymlinkRoot(t *testing.T) {
 // otherwise-pruned dirs (AppData holds the live .ost), tags findings with
 // folder/subject, and keeps partial results when a store is half-corrupt.
 func TestMailOnlyScan(t *testing.T) {
+	noOutlookLocations(t)
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "notes.txt"), "ssn 123-45-6789")
 	writeFile(t, filepath.Join(root, "AppData", "Local", "Microsoft", "Outlook", "cache.ost"), "not a real store")
@@ -346,6 +347,7 @@ var errFakeCorrupt = fmt.Errorf("truncated b-tree")
 // TestMailStoresReportedInNormalScan: without MailOnly, mail stores are
 // never opened but must be visible as a coverage gap, not silently binned.
 func TestMailStoresReportedInNormalScan(t *testing.T) {
+	noOutlookLocations(t)
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "archive.pst"), "binary-ish")
 	writeFile(t, filepath.Join(root, "notes.txt"), "ssn 123-45-6789")
@@ -692,4 +694,13 @@ func TestMailScanWarnsWhenOutlookUnreadable(t *testing.T) {
 	if runtime.GOOS == "darwin" && !strings.Contains(stats.Warnings[0], "Full Disk Access") {
 		t.Errorf("macOS warning should explain Full Disk Access: %s", stats.Warnings[0])
 	}
+}
+
+// noOutlookLocations keeps a mail-scan test from also walking whatever
+// Outlook data the machine running the tests happens to have.
+func noOutlookLocations(t *testing.T) {
+	t.Helper()
+	saved := outlookDataLocations
+	outlookDataLocations = func() []string { return nil }
+	t.Cleanup(func() { outlookDataLocations = saved })
 }

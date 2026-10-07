@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -84,11 +85,23 @@ func TestUpdateCheckAndInstallFlow(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if st.Phase != "done" || !strings.Contains(st.Message, "0.9.11") || installed == "" || !relaunched || st.Done != 10 {
-		t.Fatalf("final state = %+v installed=%q relaunched=%v", st, installed, relaunched)
+	if st.Phase != "done" || installed == "" || st.Done != 10 {
+		t.Fatalf("final state = %+v installed=%q", st, installed)
 	}
-	if _, err := os.Stat(filepath.Dir(installed)); !errors.Is(err, os.ErrNotExist) {
-		t.Error("temp download dir should be removed after install")
+	if runtime.GOOS == "windows" {
+		// Setup, started elevated, stops this process and reopens the app
+		// itself; the server only reports that and leaves the installer in
+		// place for Setup to run from.
+		if relaunched || !strings.Contains(st.Message, "Setup") {
+			t.Errorf("windows: state = %+v relaunched=%v, want Setup hand-off", st, relaunched)
+		}
+	} else {
+		if !strings.Contains(st.Message, "0.9.11") || !relaunched {
+			t.Errorf("state = %+v relaunched=%v, want relaunch of the new version", st, relaunched)
+		}
+		if _, err := os.Stat(filepath.Dir(installed)); !errors.Is(err, os.ErrNotExist) {
+			t.Error("temp download dir should be removed after install")
+		}
 	}
 
 	// Same version: no update offered.
