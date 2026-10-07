@@ -80,6 +80,9 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $src = (Resolve-Path pkg).Path
+          foreach ($f in 'privacylens.exe','privacylens-gui.exe') {
+            if (-not (Test-Path (Join-Path $src $f))) { throw "$f is missing from pkg before building the wizard" }
+          }
           $out = Join-Path $src 'PrivacyLens-Setup.exe'
           & makensis /V2 /DVERSION=0.0.1 "/DSRC_AMD64=$src" "/DSRC_ARM64=$src" "/DGUIDE=$PWD\docs\PrivacyLens-User-Guide.docx" "/DICON=$PWD\packaging\icon\icon.ico" "/DOUTFILE=$out" packaging\windows\installer.nsi
           if ($LASTEXITCODE -ne 0) { throw "makensis failed with exit code $LASTEXITCODE" }

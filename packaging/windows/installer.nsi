@@ -26,6 +26,17 @@ SetCompressor /SOLID lzma
 !include "LogicLib.nsh"
 !include "Sections.nsh"
 
+; Path separator for the File directives below. makensis on Windows
+; matches the file name part of a File path against directory entries and
+; only splits on backslashes, so "<dir>/privacylens.exe" finds nothing
+; there; the POSIX build (build-all.sh on macOS/Linux) wants forward
+; slashes.
+!ifdef NSIS_WIN32_MAKENSIS
+  !define PS "\"
+!else
+  !define PS "/"
+!endif
+
 Var Relaunch ; "1" when /RELAUNCH was given (see .onInit)
 !include "FileFunc.nsh"
 
@@ -106,11 +117,11 @@ Section "PrivacyLens" SecMain
   SetOverwrite try
   ClearErrors
   ${If} ${IsNativeARM64}
-    File "/oname=privacylens.exe" "${SRC_ARM64}/privacylens.exe"
-    File "/oname=privacylens-gui.exe" "${SRC_ARM64}/privacylens-gui.exe"
+    File "/oname=privacylens.exe" "${SRC_ARM64}${PS}privacylens.exe"
+    File "/oname=privacylens-gui.exe" "${SRC_ARM64}${PS}privacylens-gui.exe"
   ${Else}
-    File "/oname=privacylens.exe" "${SRC_AMD64}/privacylens.exe"
-    File "/oname=privacylens-gui.exe" "${SRC_AMD64}/privacylens-gui.exe"
+    File "/oname=privacylens.exe" "${SRC_AMD64}${PS}privacylens.exe"
+    File "/oname=privacylens-gui.exe" "${SRC_AMD64}${PS}privacylens-gui.exe"
   ${EndIf}
   File "/oname=PrivacyLens User Guide.docx" "${GUIDE}"
   ${If} ${Errors}
