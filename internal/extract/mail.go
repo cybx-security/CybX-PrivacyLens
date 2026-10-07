@@ -28,11 +28,9 @@ func init() {
 	})
 }
 
-// ReadMailStore extracts every item from a .pst/.ost file. A partially
-// corrupt store still yields whatever was readable: the items read so far
-// are returned alongside the first error encountered, and the caller
-// decides whether partial coverage is worth reporting.
-func ReadMailStore(path string) (items []MailItem, err error) {
+// readPSTStore extracts every item from a .pst/.ost file (see
+// ReadMailStore for the partial-result contract).
+func readPSTStore(path string) (items []MailItem, err error) {
 	// go-pst parses attacker-controllable binary structures; a malformed
 	// store must degrade to a per-file error, never take down the scan.
 	defer func() {

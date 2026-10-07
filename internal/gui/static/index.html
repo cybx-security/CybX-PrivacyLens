@@ -57,6 +57,37 @@
   .downloads { display: flex; gap: 10px; margin: 16px 0 0; flex-wrap: wrap; }
   .hidden { display: none; }
   .empty { padding: 40px; text-align: center; color: var(--muted); }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 20px; }
+  .tabs button { background: transparent; color: var(--muted); border: 0; border-bottom: 2px solid transparent; border-radius: 0; padding: 10px 18px; font-size: 14.5px; font-weight: 600; margin-bottom: -1px; }
+  .tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tabs button:hover { color: var(--ink); }
+  .settings { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 18px; margin: 0 0 18px; font-size: 13.5px; }
+  .settings summary { cursor: pointer; font-weight: 600; }
+  .settings dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 18px; margin: 10px 0 0; }
+  .settings dt { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; padding-top: 2px; }
+  .settings dd { margin: 0; word-break: break-word; }
+  .settings dd.mono { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; }
+  .viewing:not(.hidden) { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 0 0 18px; padding: 12px 16px; border-radius: 8px; background: #e8f1ff; border: 1px solid #bcd4ff; font-size: 13.5px; }
+  .viewing a { color: var(--accent); }
+  .hist-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-bottom: 12px; }
+  .hist-head label { margin: 0; }
+  .hist-head .dir { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--muted); word-break: break-all; }
+  .hist-head button { margin-left: auto; }
+  .hist td.when { white-space: nowrap; font-weight: 600; font-size: 13px; }
+  .hist td.roots { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; word-break: break-all; max-width: 420px; }
+  .hist td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .hist th.num { text-align: right; }
+  .hist .chip { margin: 1px 2px 1px 0; }
+  .hist .chip.warn { background: #fdecea; color: var(--high); }
+  .hist tr.current td { background: #f3f7ff; }
+  .access { margin-top: 14px; padding: 12px 16px; border-radius: 8px; border: 1px solid; font-size: 13.5px; }
+  .access.ok { background: #e9f7ef; border-color: #b9e3c8; }
+  .access.info { background: #eef1f5; border-color: var(--line); color: var(--muted); }
+  .access.need { background: #fff7e6; border-color: #f2d59b; }
+  .access ol { margin: 8px 0 0; padding-left: 22px; }
+  .access li { margin: 2px 0; }
+  .access .btns { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 10px; }
+  .access .btns a { font-size: 13px; color: var(--accent); }
   .spinner { display: inline-block; width: 16px; height: 16px; border: 2.5px solid #cdd6e0; border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -3px; margin-right: 8px; }
   @keyframes spin { to { transform: rotate(360deg); } }
 </style>
@@ -70,7 +101,12 @@
   Reports that were saved are still on this computer. To scan again, start PrivacyLens again and close this tab.
 </div>
 <main>
-  <div class="panel">
+  <nav class="tabs" role="tablist">
+    <button type="button" class="active" role="tab" data-tab="scan" id="tabScan" aria-selected="true">Scan</button>
+    <button type="button" role="tab" data-tab="history" id="tabHistory" aria-selected="false">Past scans</button>
+  </nav>
+  <section id="tab-scan">
+  <div class="panel" id="scanForm">
     <label for="paths">Folders or files to scan (one per line)</label>
     <textarea id="paths" rows="3" placeholder="__EXAMPLE_PATHS__">__DEFAULT_PATHS__</textarea>
     <div class="row">
@@ -112,13 +148,14 @@
       </div>
       <div class="check">
         <input type="checkbox" id="mail">
-        <label for="mail">Mail scan — only Outlook mailboxes (.pst/.ost), read message by message</label>
+        <label for="mail" title="Searches .pst/.ost files under the paths above plus Outlook's own data folders on this computer (Outlook for Mac keeps one file per message). On a Mac this needs Full Disk Access; a box below explains if it is missing.">Mail scan — Outlook mailboxes only (.pst/.ost and Outlook for Mac), read message by message</label>
       </div>
       <div class="check">
         <input type="checkbox" id="wazuhlog" checked>
         <label for="wazuhlog">Write findings to the machine-wide Insights log the SIEM agent watches (falls back to your per-user log if unavailable)</label>
       </div>
     </div>
+    <div id="mailAccess" class="access hidden" role="status"></div>
     <div class="cats-head">
       <label>PII types to look for</label>
       <a href="#" id="catsAll">select all</a>
@@ -134,8 +171,22 @@
       </div>
     </div>
   </div>
+  </section>
+
+  <section id="tab-history" class="hidden">
+    <div class="panel">
+      <div class="hist-head">
+        <label>Saved scans on this computer</label>
+        <span class="dir" id="histDir"></span>
+        <button class="ghost" type="button" id="histRefresh">Refresh</button>
+      </div>
+      <div id="histList" class="hist"><div class="empty">Loading…</div></div>
+    </div>
+  </section>
 
   <div id="results" class="hidden">
+    <div id="viewing" class="viewing hidden"></div>
+    <details class="settings" id="settingsUsed" open><summary>Scan settings used</summary><dl id="settingsList"></dl></details>
     <div class="cards" id="cards"></div>
     <div class="controls">
       <input id="search" type="search" placeholder="Filter by file, category, or context…">
@@ -182,7 +233,6 @@
   var cards = document.getElementById('cards');
   var catFilter = document.getElementById('catFilter');
   var lastFindings = [];
-  var excludesUsed = [];
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
@@ -293,7 +343,235 @@
   }).join('');
   function setAllCats(on) {
     catsBox.querySelectorAll('input').forEach(function (el) { el.checked = on; });
+    scheduleSave();
   }
+
+  // ---- Remembered form state -------------------------------------------
+  // Every change to the scan form is saved on the server (in the PrivacyLens
+  // data folder) and restored on the next launch, so the window opens the
+  // way it was left. Not browser storage: the GUI listens on a random port
+  // each launch and browsers scope their storage to the port.
+  var form = document.getElementById('scanForm');
+  var saveTimer = null;
+  function byId(id) { return document.getElementById(id); }
+  function collectSettings() {
+    return {
+      paths: byId('paths').value,
+      excludes: byId('excludes').value,
+      exclude_emails: byId('excludeEmails').value,
+      min_confidence: byId('minconf').value,
+      max_size_mb: parseInt(byId('maxsize').value, 10) || 50,
+      show_full: byId('showfull').checked,
+      ocr: byId('ocr').checked,
+      include_cloud: byId('includecloud').checked,
+      scan_all: byId('scanall').checked,
+      mail: byId('mail').checked,
+      wazuh_log: byId('wazuhlog').checked,
+      categories_off: [].map.call(catsBox.querySelectorAll('input:not(:checked)'), function (el) { return el.dataset.cat; })
+    };
+  }
+  function applySettings(st) {
+    if (!st || typeof st !== 'object') { return; }
+    if (typeof st.paths === 'string' && st.paths.trim()) { byId('paths').value = st.paths; }
+    if (typeof st.excludes === 'string') { byId('excludes').value = st.excludes; }
+    if (typeof st.exclude_emails === 'string') { byId('excludeEmails').value = st.exclude_emails; }
+    if (st.min_confidence) { byId('minconf').value = st.min_confidence; }
+    if (st.max_size_mb > 0) { byId('maxsize').value = st.max_size_mb; }
+    ['show_full:showfull', 'ocr:ocr', 'include_cloud:includecloud', 'scan_all:scanall', 'mail:mail', 'wazuh_log:wazuhlog']
+      .forEach(function (pair) {
+        var k = pair.split(':');
+        if (typeof st[k[0]] === 'boolean') { byId(k[1]).checked = st[k[0]]; }
+      });
+    var off = {};
+    (st.categories_off || []).forEach(function (c) { off[c] = true; });
+    catsBox.querySelectorAll('input').forEach(function (el) { el.checked = !off[el.dataset.cat]; });
+  }
+  function saveSettings() {
+    clearTimeout(saveTimer); saveTimer = null;
+    if (!TOKEN || stopped) { return Promise.resolve(); }
+    return fetch('/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-PL-Token': TOKEN },
+      body: JSON.stringify(collectSettings())
+    }).catch(function () { /* the next change retries; the scan itself is unaffected */ });
+  }
+  function scheduleSave() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveSettings, 400);
+  }
+  form.addEventListener('input', scheduleSave);
+  form.addEventListener('change', scheduleSave);
+  if (TOKEN) {
+    fetch('/api/settings', { headers: { 'X-PL-Token': TOKEN } })
+      .then(function (r) { return r.status === 200 ? r.json() : null; })
+      .then(applySettings)
+      .catch(function () { /* defaults stay */ })
+      .then(checkMailAccess);
+  }
+
+  // ---- Outlook mailbox access -------------------------------------------
+  // With "Mail scan" ticked, ask the server whether it can actually read
+  // the Outlook mailbox on this computer. macOS refuses until PrivacyLens
+  // has Full Disk Access, and nothing can prompt for that — so the page
+  // opens the right System Settings pane and names the app to switch on.
+  var mailAccessBox = byId('mailAccess');
+  var mailCheck = byId('mail');
+  function fdaButtons(ma) {
+    return '<div class="btns">' +
+      '<button type="button" class="ghost" data-fda="open">Open Full Disk Access settings</button>' +
+      '<button type="button" class="ghost" data-fda="check">Check again</button>' +
+      (ma && ma.app_path ? '<a href="#" data-fda="reveal">Show PrivacyLens in Finder</a>' : '') +
+      '</div>';
+  }
+  function fdaSteps(ma) {
+    var who = esc(ma.grant_to || 'PrivacyLens');
+    return '<ol>' +
+      '<li>Click <strong>Open Full Disk Access settings</strong> below.</li>' +
+      '<li>Turn on <strong>' + who + '</strong> in the list. If it is not listed, click <strong>+</strong>' +
+        (ma.app_path ? ', pick <strong>PrivacyLens</strong> in Applications' : ', pick <strong>' + who + '</strong>') +
+        ', and turn it on' + (ma.app_path ? ' (or drag it from the Finder window)' : '') + '.</li>' +
+      '<li>Quit PrivacyLens (top right), open it again, and run the mail scan.</li>' +
+      '</ol>';
+  }
+  function showMailAccess(ma) {
+    if (!mailCheck.checked) { mailAccessBox.classList.add('hidden'); return; }
+    mailAccessBox.classList.remove('hidden', 'ok', 'info', 'need');
+    if (!ma.present) {
+      mailAccessBox.classList.add('info');
+      mailAccessBox.innerHTML = 'No Outlook mailbox data was found on this computer. The mail scan will open only ' +
+        '.pst/.ost files under the paths above.';
+    } else if (ma.needs_full_disk_access) {
+      mailAccessBox.classList.add('need');
+      mailAccessBox.innerHTML = '<strong>Your Outlook mailbox cannot be read yet.</strong> macOS protects Outlook for Mac\'s data ' +
+        'until PrivacyLens has <strong>Full Disk Access</strong>. Nothing leaves this Mac; the permission only lets PrivacyLens read the mailbox files.' +
+        fdaSteps(ma) + fdaButtons(ma);
+    } else if (!ma.readable) {
+      mailAccessBox.classList.add('need');
+      mailAccessBox.innerHTML = '<strong>Your Outlook mailbox cannot be read:</strong> permission denied on ' + esc(ma.location) +
+        '. Run PrivacyLens as a user who can read it.' + '<div class="btns"><button type="button" class="ghost" data-fda="check">Check again</button></div>';
+    } else {
+      mailAccessBox.classList.add('ok');
+      mailAccessBox.innerHTML = '<strong>Outlook mailbox found</strong> — it will be searched: <span style="font-family:ui-monospace,Menlo,monospace;font-size:12.5px">' +
+        esc(ma.location) + '</span>';
+    }
+  }
+  var lastMailAccess = null;
+  function checkMailAccess() {
+    if (!TOKEN || !mailCheck.checked) { mailAccessBox.classList.add('hidden'); return; }
+    fetch('/api/mailaccess', { headers: { 'X-PL-Token': TOKEN } })
+      .then(function (r) { return r.json(); })
+      .then(function (ma) { lastMailAccess = ma; showMailAccess(ma); })
+      .catch(function () { /* the scan itself still warns if the mailbox is unreadable */ });
+  }
+  mailCheck.addEventListener('change', checkMailAccess);
+  document.addEventListener('click', function (ev) {
+    var el = ev.target.closest('[data-fda]');
+    if (!el) { return; }
+    ev.preventDefault();
+    if (el.dataset.fda === 'check') { checkMailAccess(); return; }
+    var q = el.dataset.fda === 'reveal' ? '?reveal=1' : '';
+    fetch('/api/mailaccess/settings' + q, { method: 'POST', headers: { 'X-PL-Token': TOKEN } })
+      .then(function (r) { if (!r.ok) { return r.text().then(function (t) { throw new Error(t); }); } })
+      .catch(function (err) { setStatus(esc(err.message), true); });
+  });
+
+  // ---- Tabs ------------------------------------------------------------
+  var liveReport = null;     // the scan run in this window, if any
+  var viewedReport = null;   // the saved scan chosen on the Past scans tab
+  var viewedName = '';
+  var activeTab = 'scan';
+  var viewingBanner = byId('viewing');
+  function showTab(name) {
+    activeTab = name;
+    document.querySelectorAll('.tabs button').forEach(function (b) {
+      var on = b.dataset.tab === name;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    byId('tab-scan').classList.toggle('hidden', name !== 'scan');
+    byId('tab-history').classList.toggle('hidden', name !== 'history');
+    if (name === 'scan') {
+      viewingBanner.classList.add('hidden');
+      if (liveReport) { render(liveReport); } else { results.classList.add('hidden'); }
+    } else {
+      loadHistory();
+      if (viewedReport) { render(viewedReport, viewedName); } else { results.classList.add('hidden'); }
+    }
+  }
+  document.querySelectorAll('.tabs button').forEach(function (b) {
+    b.addEventListener('click', function () { showTab(b.dataset.tab); });
+  });
+
+  // ---- Past scans ------------------------------------------------------
+  var histList = byId('histList');
+  function fmtWhen(iso) {
+    var d = new Date(iso);
+    return isNaN(d) ? esc(iso) : esc(d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }));
+  }
+  // Compact chips for the settings that change what a scan can find.
+  function paramChips(e) {
+    var p = e.params, chips = [];
+    if (!e.masked) { chips.push('<span class="chip warn">unmasked</span>'); }
+    if (!p) { chips.push('<span class="chip">settings not recorded</span>'); return chips.join(''); }
+    if (p.source) { chips.push('<span class="chip">' + (p.source === 'cli' ? 'command line' : 'window') + '</span>'); }
+    if (p.min_confidence && p.min_confidence !== 'low') { chips.push('<span class="chip">' + esc(p.min_confidence) + '+ only</span>'); }
+    if (p.categories && p.categories.length) { chips.push('<span class="chip">' + p.categories.length + ' of ' + CATEGORIES.length + ' PII types</span>'); }
+    if (p.excludes && p.excludes.length) { chips.push('<span class="chip">' + p.excludes.length + ' exclusion' + (p.excludes.length === 1 ? '' : 's') + '</span>'); }
+    if (p.exclude_emails && p.exclude_emails.length) { chips.push('<span class="chip">' + p.exclude_emails.length + ' ignored email' + (p.exclude_emails.length === 1 ? '' : 's') + '</span>'); }
+    if (p.ocr) { chips.push('<span class="chip">OCR</span>'); }
+    if (p.mail) { chips.push('<span class="chip">mail scan</span>'); }
+    if (p.scan_all) { chips.push('<span class="chip">scan everything</span>'); }
+    if (p.include_cloud) { chips.push('<span class="chip">cloud files</span>'); }
+    if (p.insights_log === false) { chips.push('<span class="chip warn">no Insights log</span>'); }
+    return chips.join('');
+  }
+  function loadHistory() {
+    if (!TOKEN) { return; }
+    fetch('/api/history', { headers: { 'X-PL-Token': TOKEN } })
+      .then(function (r) { if (!r.ok) { return r.text().then(function (t) { throw new Error(t); }); } return r.json(); })
+      .then(function (h) {
+        byId('histDir').textContent = h.dir || '';
+        var reports = h.reports || [];
+        if (!reports.length) {
+          histList.innerHTML = '<div class="empty">No saved scans yet. Every scan run from this window or the command line is saved here automatically.</div>';
+          return;
+        }
+        histList.innerHTML = '<table><thead><tr><th>When</th><th>Scanned</th><th class="num">Findings</th><th class="num">Files</th><th>Settings</th><th></th></tr></thead><tbody>' +
+          reports.map(function (e) {
+            var roots = (e.roots || []);
+            var shown = roots.slice(0, 3).map(esc).join('<br>') + (roots.length > 3 ? '<br>… and ' + (roots.length - 3) + ' more' : '');
+            return '<tr data-name="' + esc(e.name) + '"' + (e.name === viewedName ? ' class="current"' : '') + '>' +
+              '<td class="when">' + fmtWhen(e.generated_at) + '<div style="font-weight:400;color:var(--muted);font-size:12px">' + esc(e.duration || '') + (e.version ? ' · v' + esc(e.version) : '') + '</div></td>' +
+              '<td class="roots">' + shown + '</td>' +
+              '<td class="num"' + (e.findings ? ' style="font-weight:700"' : '') + '>' + fmtNum(e.findings) + '</td>' +
+              '<td class="num">' + fmtNum(e.files_scanned) + '</td>' +
+              '<td>' + paramChips(e) + '</td>' +
+              '<td style="white-space:nowrap"><button class="ghost" type="button" data-view="' + esc(e.name) + '">' + (e.name === viewedName ? 'Viewing' : 'View') + '</button></td></tr>';
+          }).join('') + '</tbody></table>';
+      })
+      .catch(function (err) {
+        histList.innerHTML = '<div class="empty">Could not list saved scans: ' + esc(err.message) + '</div>';
+      });
+  }
+  histList.addEventListener('click', function (ev) {
+    var btn = ev.target.closest('button[data-view]');
+    if (!btn) { return; }
+    var name = btn.dataset.view;
+    btn.disabled = true; btn.textContent = 'Loading…';
+    fetch('/api/history/report?name=' + encodeURIComponent(name), { headers: { 'X-PL-Token': TOKEN } })
+      .then(function (r) { if (!r.ok) { return r.text().then(function (t) { throw new Error(t); }); } return r.json(); })
+      .then(function (rep) {
+        viewedReport = rep; viewedName = name;
+        loadHistory();
+        render(rep, name);
+        results.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      })
+      .catch(function (err) {
+        btn.disabled = false; btn.textContent = 'View';
+        histList.insertAdjacentHTML('afterbegin', '<div class="empty" style="padding:12px;color:var(--high)">Could not open that scan: ' + esc(err.message) + '</div>');
+      });
+  });
+  byId('histRefresh').addEventListener('click', loadHistory);
   document.getElementById('catsAll').addEventListener('click', function (e) { e.preventDefault(); setAllCats(true); });
   document.getElementById('catsNone').addEventListener('click', function (e) { e.preventDefault(); setAllCats(false); });
 
@@ -302,7 +580,6 @@
       .split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
     if (!paths.length) { setStatus('Enter at least one folder or file path.', true); return; }
     var excludes = splitPatterns(document.getElementById('excludes').value);
-    excludesUsed = excludes;
     var excludeEmails = document.getElementById('excludeEmails').value
       .split(',').map(function (s) { return s.trim(); }).filter(Boolean);
     var selCats = [].map.call(catsBox.querySelectorAll('input:checked'), function (el) { return el.dataset.cat; });
@@ -326,6 +603,7 @@
 	    scanBtn.disabled = true;
 	    cancelBtn.classList.remove('hidden');
 	    scanController = new AbortController();
+    saveSettings();
     setStatus('<span class="spinner"></span>Starting scan…');
     startProgress();
     fetch('/api/scan', {
@@ -336,7 +614,10 @@
     }).then(function (resp) {
       if (!resp.ok) { return resp.text().then(function (t) { throw new Error(t); }); }
       return resp.json();
-    }).then(render).catch(function (err) {
+    }).then(function (rep) {
+      liveReport = rep;
+      render(rep);
+    }).catch(function (err) {
       setStatus('Scan failed: ' + esc(err.message), true);
       results.classList.add('hidden');
 	    }).finally(function () {
@@ -348,12 +629,48 @@
 	    if (scanController) { setStatus('Cancelling scan…'); scanController.abort(); }
 	  });
 
-  function render(rep) {
+  // render shows a report in the results area: the scan just run (savedName
+  // empty — the summary goes on the status line) or a saved one from the
+  // Past scans tab (savedName set — the summary goes in a banner, since the
+  // status line belongs to the scan form).
+  function render(rep, savedName) {
     lastFindings = rep.findings || [];
     var s = rep.stats || {};
-    setStatus('Scanned ' + (s.files_scanned || 0) + ' files in ' + esc(rep.duration) +
+    var excludesUsed = (rep.params && rep.params.excludes) || [];
+    // How much of the tree the exclusions removed.
+    var skippedNote = (s.files_skipped || 0) > 0 && excludesUsed.length
+      ? ' - ' + s.files_skipped + ' skipped (excluded or not a document type)' : '';
+    var summary = 'Scanned ' + fmtNum(s.files_scanned) + ' files in ' + esc(rep.duration) +
       ' — ' + lastFindings.length + ' finding' + (lastFindings.length === 1 ? '' : 's') +
-      (rep.masked ? ' (values masked)' : ' (FULL VALUES SHOWN)'), false);
+      (rep.masked ? ' (values masked)' : ' (FULL VALUES SHOWN)') + esc(skippedNote);
+    if (savedName) {
+      viewingBanner.innerHTML = '<strong>Viewing saved scan from ' + fmtWhen(rep.generated_at) + '</strong>' +
+        '<span>' + summary + '</span>' +
+        '<a href="#" id="closeViewed" style="margin-left:auto">Close</a>';
+      viewingBanner.classList.remove('hidden');
+      byId('closeViewed').addEventListener('click', function (e) {
+        e.preventDefault();
+        viewedReport = null; viewedName = '';
+        results.classList.add('hidden');
+        loadHistory();
+      });
+    } else {
+      setStatus(summary, false);
+    }
+
+    // What this scan looked for and where: the roots, then the settings
+    // rows the server spelled out (the same wording as the HTML report).
+    var rows = '<dt>Scanned</dt><dd class="mono">' + (rep.roots || []).map(esc).join('<br>') + '</dd>';
+    if (rep.settings && rep.settings.length) {
+      rows += rep.settings.map(function (l) { return '<dt>' + esc(l.label) + '</dt><dd>' + esc(l.value) + '</dd>'; }).join('');
+    } else {
+      rows += '<dt>Other settings</dt><dd>Not recorded — this scan was saved by an older version of PrivacyLens.</dd>';
+    }
+    if (s.mail_roots && s.mail_roots.length) {
+      rows += '<dt>Also searched</dt><dd class="mono">' + s.mail_roots.map(esc).join('<br>') + '</dd>';
+    }
+    rows += '<dt>Values</dt><dd>' + (rep.masked ? 'Masked' : 'Full (unmasked)') + '</dd>';
+    byId('settingsList').innerHTML = rows;
 
     var byCat = {};
     lastFindings.forEach(function (f) { byCat[f.category] = (byCat[f.category] || 0) + 1; });
@@ -421,6 +738,10 @@
     }
     var logWarn = document.getElementById('logWarn');
     var warns = [];
+    (s.warnings || []).forEach(function (wmsg) {
+      warns.push('<strong>⚠ ' + esc(wmsg) + '</strong>' +
+        (!savedName && /Full Disk Access/.test(wmsg) ? fdaButtons(lastMailAccess) : ''));
+    });
     if (rep.log_warning) { warns.push('<strong>⚠ ' + esc(rep.log_warning) + '</strong>'); }
     if (rep.save_error) { warns.push('Could not auto-save results: ' + esc(rep.save_error)); }
     if (warns.length) {
@@ -444,10 +765,6 @@
     }
 
     var ocrNotice = document.getElementById('ocrNotice');
-    // The status line says how much of the tree the exclusions removed.
-    var skippedNote = (s.files_skipped || 0) > 0 && excludesUsed.length
-      ? ' - ' + s.files_skipped + ' skipped (excluded or not a document type)' : '';
-    status.innerHTML += esc(skippedNote);
     var ocrFiles = (rep.stats && rep.stats.need_ocr_files) || [];
     var mailFiles = (rep.stats && rep.stats.mail_store_files) || [];
     var notices = [];
@@ -512,7 +829,8 @@
 
   document.querySelectorAll('.downloads button').forEach(function (btn) {
     btn.addEventListener('click', function () {
-      fetch('/api/download?format=' + encodeURIComponent(btn.dataset.fmt), {
+      var saved = activeTab === 'history' && viewedName ? '&report=' + encodeURIComponent(viewedName) : '';
+      fetch('/api/download?format=' + encodeURIComponent(btn.dataset.fmt) + saved, {
         headers: { 'X-PL-Token': TOKEN }
       }).then(function (resp) {
         if (!resp.ok) { return resp.text().then(function (t) { throw new Error(t); }); }

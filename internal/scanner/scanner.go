@@ -5,6 +5,7 @@ package scanner
 import (
 	"context"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -42,11 +43,15 @@ type Options struct {
 	// network and fill the disk.
 	IncludeCloud bool
 
-	// MailOnly runs a targeted mail scan: only Outlook mail stores
-	// (.pst/.ost) are scanned, message by message, and everything else is
-	// passed over. The AppData prune is lifted for the walk — that is where
-	// Outlook keeps the live .ost cache. Without MailOnly, mail stores are
-	// never opened; they are counted in Stats.MailSkipped instead.
+	// MailOnly runs a targeted mail scan: only Outlook mailbox data is
+	// scanned, message by message — .pst/.ost stores, and Outlook for
+	// Mac's per-message store — and everything else is passed over. The
+	// AppData prune is lifted for the walk (that is where Outlook keeps the
+	// live .ost cache), and the places Outlook keeps its data on this
+	// machine are searched even when the roots do not cover them (see
+	// outlookDataLocations; Stats.MailRoots lists what was added). Without
+	// MailOnly, mail stores are never opened; they are counted in
+	// Stats.MailSkipped instead.
 	MailOnly bool
 
 	// Categories restricts detection to these category display names (as
@@ -132,6 +137,14 @@ type Stats struct {
 	MailSkipped  []string `json:"mail_store_files,omitempty"`     // mail stores that were NOT searched
 	UnreadDocs   []string `json:"unreadable_doc_files,omitempty"` // unsupported-format documents that were NOT searched
 	Errors       []string `json:"errors,omitempty"`
+	// MailRoots are the Outlook data locations a mail scan searched on its
+	// own initiative, beyond the roots it was given.
+	MailRoots []string `json:"mail_roots,omitempty"`
+	// Warnings are coverage problems that need the user to act — above all
+	// macOS refusing access to Outlook's mailbox until PrivacyLens has Full
+	// Disk Access. They must be shown prominently: each one means part of
+	// what was asked for was NOT searched.
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 type fileResult struct {
@@ -182,6 +195,10 @@ func ScanContext(ctx context.Context, roots []string, opts Options) ([]Finding, 
 	selfDir := selfDataDir()
 	selfExe := selfExecutable()
 
+	if opts.MailOnly {
+		roots = withOutlookLocations(roots, &stats)
+	}
+
 	for _, root := range roots {
 		if err := ctx.Err(); err != nil {
 			return nil, stats, err
@@ -214,6 +231,9 @@ func ScanContext(ctx context.Context, roots []string, opts Options) ([]Finding, 
 			if err != nil {
 				stats.FilesErrored++
 				stats.Errors = append(stats.Errors, fmt.Sprintf("%s: %v", p, err))
+				if errors.Is(err, fs.ErrPermission) && underAny(p, stats.MailRoots) {
+					stats.warn(mailAccessWarning(p))
+				}
 				return nil
 			}
 			if d.IsDir() {
@@ -292,11 +312,16 @@ func ScanContext(ctx context.Context, roots []string, opts Options) ([]Finding, 
 
 	var findings []Finding
 	done := 0
+	mailSeen := map[string]bool{} // mail stores listed once each (Mac message files share a folder)
 	for r := range results {
 		switch {
 		case r.err != nil:
 			stats.FilesErrored++
 			stats.Errors = append(stats.Errors, fmt.Sprintf("%s: %s", r.path, oneLine(r.err.Error())))
+			if opts.MailOnly && extract.IsMailStore(r.path) && strings.Contains(r.err.Error(), "used by another process") {
+				// Outlook holds its live .ost open exclusively on Windows.
+				stats.warn(fmt.Sprintf("Outlook has %s open, so it was NOT searched. Close Outlook and run the mail scan again.", r.path))
+			}
 		case r.needsOCR:
 			stats.FilesNeedOCR++
 			stats.NeedOCR = append(stats.NeedOCR, r.path)
@@ -305,7 +330,10 @@ func ScanContext(ctx context.Context, roots []string, opts Options) ([]Finding, 
 			stats.CloudSkipped = append(stats.CloudSkipped, r.path)
 		case r.mailStore:
 			stats.FilesMail++
-			stats.MailSkipped = append(stats.MailSkipped, r.path)
+			if shown := extract.MailStoreDisplayPath(r.path); !mailSeen[shown] {
+				mailSeen[shown] = true
+				stats.MailSkipped = append(stats.MailSkipped, shown)
+			}
 		case r.unreadDoc:
 			stats.FilesDocs++
 			stats.UnreadDocs = append(stats.UnreadDocs, r.path)
@@ -690,7 +718,102 @@ func csvSecrets(path, text string) map[int][]string {
 	}
 }
 
-// scanMailStore runs the detectors over every item of a .pst/.ost,
+// outlookDataLocations lists where Outlook keeps mailbox data on this
+// machine, so a mail scan searches it even when the chosen paths do not
+// reach it (the GUI's default is the Documents folder, which holds neither
+// of these). Outlook for Mac has no .pst at all: its store is one MIME
+// file per message under the user's Library, which macOS hides and, since
+// Ventura, refuses to open until the reading app has Full Disk Access. On
+// Windows the live .ost cache sits under AppData and default .pst files
+// under Documents\Outlook Files. A variable so tests can point it at a
+// fixture.
+var outlookDataLocations = func() []string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	switch runtime.GOOS {
+	case "darwin":
+		return []string{filepath.Join(home, "Library", "Group Containers", "UBF8T346G9.Office", "Outlook", "Outlook 15 Profiles")}
+	case "windows":
+		locs := []string{filepath.Join(home, "Documents", "Outlook Files")}
+		if la := os.Getenv("LOCALAPPDATA"); la != "" {
+			locs = append(locs, filepath.Join(la, "Microsoft", "Outlook"))
+		}
+		return locs
+	}
+	return nil
+}
+
+// OutlookDataLocations returns the Outlook data folders a mail scan searches
+// on its own (see outlookDataLocations), whether or not they exist.
+func OutlookDataLocations() []string { return outlookDataLocations() }
+
+// withOutlookLocations appends the Outlook data locations that exist on
+// this machine and are not already inside a root, recording them in
+// stats.MailRoots. A location macOS refuses to stat is still added: the
+// walk then produces the permission error that becomes the Full Disk
+// Access warning, instead of the mailbox silently not being there.
+func withOutlookLocations(roots []string, stats *Stats) []string {
+	out := append([]string(nil), roots...)
+	for _, loc := range outlookDataLocations() {
+		if _, err := os.Stat(loc); err != nil && !errors.Is(err, fs.ErrPermission) {
+			continue
+		}
+		if underAny(loc, roots) {
+			continue
+		}
+		out = append(out, loc)
+		stats.MailRoots = append(stats.MailRoots, loc)
+	}
+	return out
+}
+
+// underAny reports whether p is one of dirs or inside one. Case-insensitive
+// on Windows and macOS, whose filesystems are.
+func underAny(p string, dirs []string) bool {
+	p = filepath.Clean(p)
+	for _, d := range dirs {
+		d = filepath.Clean(d)
+		if len(p) < len(d) {
+			continue
+		}
+		head, rest := p[:len(d)], p[len(d):]
+		if rest != "" && rest[0] != filepath.Separator {
+			continue
+		}
+		if head == d || ((runtime.GOOS == "windows" || runtime.GOOS == "darwin") && strings.EqualFold(head, d)) {
+			return true
+		}
+	}
+	return false
+}
+
+// warn records a coverage warning once.
+func (st *Stats) warn(msg string) {
+	for _, w := range st.Warnings {
+		if w == msg {
+			return
+		}
+	}
+	st.Warnings = append(st.Warnings, msg)
+}
+
+// mailAccessWarning spells out why Outlook's mailbox could not be read and
+// what to do about it. On macOS the cause is almost always Full Disk
+// Access, which only the user can grant.
+func mailAccessWarning(p string) string {
+	if runtime.GOOS == "darwin" {
+		return fmt.Sprintf("Your Outlook mailbox was NOT searched: macOS blocked access to Outlook for Mac's data (%s). "+
+			"Give PrivacyLens Full Disk Access — System Settings → Privacy & Security → Full Disk Access — adding PrivacyLens.app "+
+			"(or, if you run privacylens from a terminal, that terminal app), then run the mail scan again.", p)
+	}
+	return fmt.Sprintf("Your Outlook mailbox was NOT searched: permission denied reading %s. Run the mail scan as a user who can read it.", p)
+}
+
+// scanMailStore runs the detectors over every item of a mail store —
+// every message of a .pst/.ost, or the one message of an Outlook for Mac
+// message file —
 // message by message. Findings carry the Outlook folder and subject, with
 // Line holding the item's position in its folder. A partially corrupt
 // store keeps its readable findings; the problem lands in Stats.Errors.

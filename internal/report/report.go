@@ -25,6 +25,9 @@ type Report struct {
 	Duration    string            `json:"duration"`
 	Stats       scanner.Stats     `json:"stats"`
 	Findings    []scanner.Finding `json:"findings"`
+	// Params are the settings the scan ran with; nil on reports written by
+	// versions that did not record them.
+	Params *Params `json:"params,omitempty"`
 }
 
 // ForOutput returns a copy of the report with findings masked unless the
@@ -268,6 +271,12 @@ func PrintConsole(w io.Writer, r *Report, verbose bool) {
 		fmt.Fprintf(w, "Documents NOT searched: %d in formats PrivacyLens cannot open (old .doc/.xls/.ppt, .msg, OpenDocument…); re-save as .docx/.xlsx/.pdf to scan them (-verbose lists them)\n", n)
 	}
 	fmt.Fprintf(w, "Findings: %d across %d files\n", len(r.Findings), r.filesWithFindings())
+	for _, warn := range r.Stats.Warnings {
+		fmt.Fprintf(w, "\nWARNING: %s\n", warn)
+	}
+	if len(r.Stats.MailRoots) > 0 {
+		fmt.Fprintf(w, "Also searched Outlook's data folder(s): %s\n", strings.Join(r.Stats.MailRoots, ", "))
+	}
 
 	if len(r.Findings) > 0 {
 		fmt.Fprintf(w, "\n  %-34s %s\n", "CATEGORY", "COUNT")

@@ -101,7 +101,7 @@ func run() int {
 	includeCloud := flag.Bool("include-cloud", false, "scan cloud-placeholder files (OneDrive/iCloud online-only); forces each one to download")
 	scanAll := flag.Bool("scan-all", false, "also scan built-in skipped folders (AppData, $Recycle.Bin, node_modules, .Trash, .cache)")
 	ocr := flag.Bool("ocr", false, "OCR image files and scanned PDFs with tesseract (PDFs also need pdftoppm from poppler); slow — seconds per page")
-	mailOnly := flag.Bool("mail", false, "targeted mail scan: only Outlook mail stores (.pst/.ost) are opened, message by message; walks AppData, where Outlook keeps the live .ost (max-size defaults to 50 GB in this mode)")
+	mailOnly := flag.Bool("mail", false, "targeted mail scan: only Outlook mailbox data is opened, message by message — .pst/.ost stores and Outlook for Mac's message store; Outlook's own data folders (AppData on Windows, ~/Library/Group Containers on macOS, which needs Full Disk Access) are searched even if not among the paths (max-size defaults to 50 GB in this mode)")
 	workers := flag.Int("workers", runtime.NumCPU(), "concurrent scan workers")
 	memoryMB := flag.Int64("memory-budget", 256, "approximate aggregate `MB` allowed for files being extracted concurrently")
 	categories := flag.String("categories", "", "only look for these PII `types`, comma-separated (default: all). Types: "+strings.Join(detect.Categories(), ", "))
@@ -411,6 +411,19 @@ Examples:
 		Duration:    time.Since(start).Round(time.Millisecond).String(),
 		Stats:       stats,
 		Findings:    findings,
+		Params: &report.Params{
+			Source:        "cli",
+			Excludes:      excludes,
+			ExcludeEmails: excludeEmails,
+			MinConfidence: conf.String(),
+			MaxSizeMB:     *maxSizeMB,
+			Categories:    catList,
+			OCR:           *ocr,
+			IncludeCloud:  *includeCloud,
+			ScanAll:       *scanAll,
+			Mail:          *mailOnly,
+			InsightsLog:   stream != nil,
+		},
 	}
 
 	type output struct {

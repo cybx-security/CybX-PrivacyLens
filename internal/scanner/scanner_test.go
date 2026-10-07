@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -273,8 +274,15 @@ func TestMailOnlyScan(t *testing.T) {
 	writeFile(t, filepath.Join(root, "notes.txt"), "ssn 123-45-6789")
 	writeFile(t, filepath.Join(root, "AppData", "Local", "Microsoft", "Outlook", "cache.ost"), "not a real store")
 	writeFile(t, filepath.Join(root, "archive.pst"), "not a real store")
+	// Outlook for Mac keeps one MIME file per message; read for real.
+	macMsg := filepath.Join(root, "Library", "Group Containers", "UBF8T346G9.Office", "Outlook",
+		"Outlook 15 Profiles", "Main Profile", "Data", "Message Sources", "0", "x_7.olk15MsgSource")
+	writeFile(t, macMsg, "From: a@b.com\r\nSubject: payroll\r\nContent-Type: text/plain\r\n\r\nher ssn 219-09-9999\r\n")
 
 	stub := func(path string) ([]extract.MailItem, error) {
+		if extract.IsMessageSource(path) {
+			return extract.ReadMailStore(path)
+		}
 		if strings.HasSuffix(path, ".ost") {
 			return []extract.MailItem{
 				{Folder: "Inbox", Subject: "re: onboarding", Index: 3, Text: "his ssn is 123-45-6789 thanks"},
@@ -292,8 +300,20 @@ func TestMailOnlyScan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats.FilesScanned != 2 {
-		t.Errorf("want 2 mail stores scanned, got %d (stats %+v)", stats.FilesScanned, stats)
+	if stats.FilesScanned != 3 {
+		t.Errorf("want 3 mail stores scanned, got %d (stats %+v)", stats.FilesScanned, stats)
+	}
+	var sawMacSSN bool
+	for _, f := range findings {
+		if f.Path == macMsg {
+			sawMacSSN = sawMacSSN || f.Category == "SSN"
+			if f.Folder != "Outlook for Mac — Main Profile" || f.Subject != "payroll" || f.Line != 1 {
+				t.Errorf("Mac message finding location wrong: %+v", f)
+			}
+		}
+	}
+	if !sawMacSSN {
+		t.Error("expected an SSN finding from the Outlook for Mac message file")
 	}
 	for _, f := range findings {
 		if strings.HasSuffix(f.Path, "notes.txt") {
@@ -330,12 +350,21 @@ func TestMailStoresReportedInNormalScan(t *testing.T) {
 	writeFile(t, filepath.Join(root, "archive.pst"), "binary-ish")
 	writeFile(t, filepath.Join(root, "notes.txt"), "ssn 123-45-6789")
 
+	// Two Mac message files in one profile list as that profile, once.
+	profile := filepath.Join(root, "Outlook 15 Profiles", "Main Profile")
+	writeFile(t, filepath.Join(profile, "Data", "Message Sources", "0", "a.olk15MsgSource"), "Subject: x\r\n\r\nhi")
+	writeFile(t, filepath.Join(profile, "Data", "Message Sources", "1", "b.olk15MsgSource"), "Subject: y\r\n\r\nhi")
+
 	findings, stats, err := Scan([]string{root}, Options{MaxSizeBytes: 1 << 20, Workers: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats.FilesMail != 1 || len(stats.MailSkipped) != 1 || !strings.HasSuffix(stats.MailSkipped[0], "archive.pst") {
-		t.Errorf("mail store not reported as skipped: %+v", stats)
+	if stats.FilesMail != 3 || len(stats.MailSkipped) != 2 {
+		t.Errorf("mail stores not reported as skipped (want 3 counted, 2 listed): %+v", stats)
+	}
+	listed := strings.Join(stats.MailSkipped, "\n")
+	if !strings.Contains(listed, "archive.pst") || !strings.Contains(listed, profile) || strings.Contains(listed, ".olk15MsgSource") {
+		t.Errorf("skipped list should name the .pst and the profile folder, not each message: %v", stats.MailSkipped)
 	}
 	if len(findings) == 0 {
 		t.Error("regular files should still be scanned")
@@ -591,5 +620,76 @@ func TestExcludesIgnoreCase(t *testing.T) {
 func TestErrorsAreOneLine(t *testing.T) {
 	if got := oneLine("ocr failed: Error in findFileFormatStream\n  second line\r\n\tthird"); got != "ocr failed: Error in findFileFormatStream second line third" {
 		t.Errorf("oneLine = %q", got)
+	}
+}
+
+// TestMailScanAddsOutlookLocations: a mail scan searches where Outlook
+// keeps its data even when the chosen paths do not reach it, says so in
+// stats, and skips locations already inside a root.
+func TestMailScanAddsOutlookLocations(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "notes.txt"), "ssn 123-45-6789")
+	outlook := filepath.Join(t.TempDir(), "Outlook 15 Profiles")
+	msg := filepath.Join(outlook, "Main Profile", "Data", "Message Sources", "0", "m.olk15MsgSource")
+	writeFile(t, msg, "Subject: hi\r\nContent-Type: text/plain\r\n\r\nssn 219-09-9999\r\n")
+	inside := filepath.Join(root, "Outlook Files")
+	writeFile(t, filepath.Join(inside, "readme.txt"), "x")
+	missing := filepath.Join(t.TempDir(), "nope")
+
+	saved := outlookDataLocations
+	outlookDataLocations = func() []string { return []string{outlook, inside, missing} }
+	t.Cleanup(func() { outlookDataLocations = saved })
+
+	findings, stats, err := Scan([]string{root}, Options{MaxSizeBytes: 1 << 20, Workers: 2, MailOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stats.MailRoots) != 1 || stats.MailRoots[0] != outlook {
+		t.Errorf("MailRoots = %v, want just %s (inside-root and missing locations skipped)", stats.MailRoots, outlook)
+	}
+	if len(findings) != 1 || findings[0].Path != msg {
+		t.Errorf("findings = %+v, want the SSN from the Outlook location", findings)
+	}
+	if len(stats.Warnings) != 0 {
+		t.Errorf("unexpected warnings: %v", stats.Warnings)
+	}
+
+	// Without MailOnly nothing is added.
+	_, stats, err = Scan([]string{root}, Options{MaxSizeBytes: 1 << 20, Workers: 2})
+	if err != nil || len(stats.MailRoots) != 0 {
+		t.Errorf("normal scan must not add Outlook locations: %v %v", stats.MailRoots, err)
+	}
+}
+
+// TestMailScanWarnsWhenOutlookUnreadable: an Outlook location the process
+// may not read (macOS without Full Disk Access) becomes a loud warning,
+// never a quiet clean result.
+func TestMailScanWarnsWhenOutlookUnreadable(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs POSIX permissions and a non-root user")
+	}
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "notes.txt"), "x")
+	outlook := filepath.Join(t.TempDir(), "Outlook 15 Profiles")
+	if err := os.MkdirAll(outlook, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(outlook, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(outlook, 0o700) })
+	saved := outlookDataLocations
+	outlookDataLocations = func() []string { return []string{outlook} }
+	t.Cleanup(func() { outlookDataLocations = saved })
+
+	_, stats, err := Scan([]string{root}, Options{MaxSizeBytes: 1 << 20, Workers: 2, MailOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stats.Warnings) != 1 || !strings.Contains(stats.Warnings[0], "NOT searched") || !strings.Contains(stats.Warnings[0], outlook) {
+		t.Fatalf("Warnings = %v, want one naming the unreadable Outlook location", stats.Warnings)
+	}
+	if runtime.GOOS == "darwin" && !strings.Contains(stats.Warnings[0], "Full Disk Access") {
+		t.Errorf("macOS warning should explain Full Disk Access: %s", stats.Warnings[0])
 	}
 }

@@ -4,5 +4,5 @@ package buildinfo
 
 const (
 	Tool    = "PrivacyLens"
-	Version = "0.9.9"
+	Version = "0.9.10"
 )

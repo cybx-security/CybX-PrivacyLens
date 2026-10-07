@@ -58,6 +58,12 @@ var htmlTmpl = template.Must(template.New("report").Parse(`<!DOCTYPE html>
   .card.ocr .num { color: var(--medium); }
   .mailloc { color: #66727f; font-size: 11.5px; margin-top: 2px; }
   .empty { padding: 48px; text-align: center; color: var(--muted); background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
+  .settings { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 18px; margin: 0 0 24px; font-size: 13.5px; }
+  .settings summary { cursor: pointer; font-weight: 600; }
+  .settings dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 18px; margin: 10px 0 0; }
+  .settings dt { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; padding-top: 2px; }
+  .settings dd { margin: 0; word-break: break-word; }
+  .settings dd.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
 </style>
 </head>
 <body>
@@ -69,6 +75,18 @@ var htmlTmpl = template.Must(template.New("report").Parse(`<!DOCTYPE html>
   </div>
 </header>
 <main>
+  <details class="settings" open>
+    <summary>Scan settings</summary>
+    <dl>
+      <dt>Scanned</dt><dd class="mono">{{range $i, $r := .Roots}}{{if $i}}<br>{{end}}{{$r}}{{end}}</dd>
+      {{with .Params}}{{range .Lines}}<dt>{{.Label}}</dt><dd>{{.Value}}</dd>{{end}}{{else}}<dt>Other settings</dt><dd>Not recorded — this report was written by an older version of {{.Tool}}.</dd>{{end}}
+      {{if .Stats.MailRoots}}<dt>Also searched</dt><dd class="mono">{{range $i, $r := .Stats.MailRoots}}{{if $i}}<br>{{end}}{{$r}}{{end}}</dd>{{end}}
+      <dt>Values</dt><dd>{{if .Masked}}Masked{{else}}Full (unmasked){{end}}</dd>
+    </dl>
+  </details>
+  {{range .Stats.Warnings}}
+  <p class="notice full" style="margin:0 0 18px"><strong>Warning:</strong> {{.}}</p>
+  {{end}}
   <div class="cards">
     <div class="card"><div class="num">{{len .Findings}}</div><div class="label">Total findings</div></div>
     <div class="card"><div class="num">{{.Stats.FilesScanned}}</div><div class="label">Files scanned</div></div>

@@ -106,6 +106,46 @@ one maximum-sized document per CPU core. The default is 256 MB; tune it with
 **Cancel scan** in the GUI, to stop discovery and prevent new files from being
 opened while current work shuts down.
 
+### Mail scan (Outlook)
+
+`privacylens -mail <paths>` (or **Mail scan** in the GUI) opens only Outlook
+mailbox data and reads it message by message, tagging each finding with its
+mail folder and subject. Two kinds of mailbox are understood:
+
+- **Outlook for Windows** — `.pst` archives and the live `.ost` cache
+  (pure-Go reader; a store Outlook has open is locked and reported as an
+  error). The walk descends into AppData, where the `.ost` lives.
+- **Outlook for Mac** — which has no `.pst` at all. Its mailbox is one raw
+  MIME file per message (`.olk15MsgSource`) under
+  `~/Library/Group Containers/UBF8T346G9.Office/Outlook/Outlook 15 Profiles/`.
+  Each message's headers and text/HTML parts are scanned; attachments are
+  listed by name only. Outlook keeps its folder tree in a database, so the
+  Folder column shows the profile (`Outlook for Mac — Main Profile`) rather
+  than Inbox/Sent.
+
+A mail scan searches Outlook's own data folders on the machine automatically
+(`%LOCALAPPDATA%\Microsoft\Outlook` and `Documents\Outlook Files` on Windows,
+the Group Containers profile folder on macOS) even when the chosen paths do
+not reach them; the report lists them under **Also searched**. Outside a mail
+scan, mailboxes are never opened — they are counted and listed as not
+searched, a Mac profile folder once rather than per message.
+
+**macOS needs Full Disk Access.** The Outlook profile folder is protected by
+macOS privacy controls: without Full Disk Access every read fails with
+"operation not permitted" and the mailbox silently looks empty. macOS has no
+way for a program to ask for this permission, so PrivacyLens does the next
+best thing. Ticking **Mail scan** in the GUI checks whether the mailbox can
+be read right now; if not, a box under the options walks through the fix,
+with an **Open Full Disk Access settings** button that opens System Settings
+on the right pane, a **Show PrivacyLens in Finder** link for dragging the app
+onto the list, and **Check again**. It names the app to switch on:
+`PrivacyLens` when run from the app, or the terminal app (Terminal, iTerm,
+…) when run from the command line. A scan that ran into the block still
+says so prominently — in the GUI (with the same button), the HTML report,
+and the console — so a blocked mailbox is never mistaken for a clean one.
+On Windows, a mail scan while Outlook is open reports the locked `.ost` the
+same way: close Outlook and run it again.
+
 **Findings always reach the Insights log.** Every scan — flagless, with
 `-json`/`-csv`/`-html`, manifest-driven, or from the GUI — appends NDJSON
 events to the machine-wide findings log the SIEM agent tails
@@ -134,6 +174,16 @@ the same interface with no terminal involved): enter
 paths, set options, hit **Scan**, filter the results table, and download the
 HTML/JSON/CSV/syslog reports. It is the same engine and the same single
 binary as the CLI.
+
+The form remembers itself: paths, options, and which PII types are ticked
+are saved (in the data folder, as `gui-settings.json`) the moment they
+change, so the window opens the way it was left. Every result — in the GUI
+and in the saved HTML/JSON reports — opens with a **Scan settings** block
+stating exactly what the scan looked for and where, so a report answers
+"what was searched?" as well as "what was found?". The **Past scans** tab
+lists every report saved on this computer (GUI and command-line runs
+alike), with the settings each used; any of them can be reopened in the
+page and downloaded again in any format.
 
 **Quit PrivacyLens** (top right of the page) stops the program. The
 double-click launcher also stops by itself about 15 minutes after its last
@@ -242,7 +292,9 @@ PrivacyLens data folder:
 | macOS | `~/Library/Application Support/PrivacyLens` |
 | Linux | `~/.local/share/privacylens` |
 
-Layout: `reports/scan-<timestamp>.html|.json` and `logs/findings.json`
+Layout: `reports/scan-<timestamp>.html|.json` (each report records the
+scan settings it ran with), `gui-settings.json` (the GUI's remembered form
+state), and `logs/findings.json`
 (one JSON event per line, append-only — the file an Insights agent monitors;
 appending is what guarantees the agent sees every event exactly once).
 **The GUI always auto-saves** and shows the

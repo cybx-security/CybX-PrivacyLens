@@ -71,6 +71,9 @@ type server struct {
 	// is running.
 	progMu sync.Mutex
 	prog   progressState
+
+	history    historyCache // summaries of saved reports, for the Past scans tab
+	settingsMu sync.Mutex   // serializes writes of the saved form state
 }
 
 // progressState is what /api/progress returns. During the discovery walk
@@ -100,6 +103,11 @@ func Run(opts Options) error {
 	mux.HandleFunc("/api/scan", s.auth(s.handleScan))
 	mux.HandleFunc("/api/progress", s.auth(s.handleProgress))
 	mux.HandleFunc("/api/download", s.auth(s.handleDownload))
+	mux.HandleFunc("/api/history", s.auth(s.handleHistory))
+	mux.HandleFunc("/api/history/report", s.auth(s.handleHistoryReport))
+	mux.HandleFunc("/api/settings", s.auth(s.handleSettings))
+	mux.HandleFunc("/api/mailaccess", s.auth(s.handleMailAccess))
+	mux.HandleFunc("/api/mailaccess/settings", s.auth(s.handleOpenDiskAccess))
 	mux.HandleFunc("/api/ping", s.auth(s.handlePing))
 	mux.HandleFunc("/api/quit", s.auth(s.handleQuit))
 
@@ -412,6 +420,19 @@ func (s *server) handleScan(w http.ResponseWriter, r *http.Request) {
 		Duration:    time.Since(start).Round(time.Millisecond).String(),
 		Stats:       stats,
 		Findings:    findings,
+		Params: &report.Params{
+			Source:        "gui",
+			Excludes:      req.Excludes,
+			ExcludeEmails: req.ExcludeEmails,
+			MinConfidence: conf.String(),
+			MaxSizeMB:     req.MaxSizeMB,
+			Categories:    req.Categories,
+			OCR:           req.OCR,
+			IncludeCloud:  req.IncludeCloud,
+			ScanAll:       req.ScanAll,
+			Mail:          req.Mail,
+			InsightsLog:   stream != nil,
+		},
 	}
 
 	// Always persist GUI scans to the per-user data folder — non-technical
@@ -435,14 +456,10 @@ func (s *server) handleScan(w http.ResponseWriter, r *http.Request) {
 		savedPtr = &saved
 	}
 
-	// The Report's fields are embedded so the response stays shape-compatible
-	// with plain report JSON; saved/save_error/log_warning ride alongside.
-	resp := struct {
-		*report.Report
-		Saved      *report.SavedPaths `json:"saved,omitempty"`
-		SaveError  string             `json:"save_error,omitempty"`
-		LogWarning string             `json:"log_warning,omitempty"`
-	}{s.last.ForOutput(), savedPtr, saveErr, logWarning}
+	resp := pageReport{
+		Report: s.last.ForOutput(), Settings: s.last.Params.Lines(),
+		Saved: savedPtr, SaveError: saveErr, LogWarning: logWarning,
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
@@ -460,10 +477,21 @@ func (s *server) handleProgress(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(p)
 }
 
+// handleDownload renders the most recent scan — or, with ?report=<name>, a
+// saved one from the Past scans tab — in the requested format.
 func (s *server) handleDownload(w http.ResponseWriter, r *http.Request) {
-	s.mu.Lock()
-	rep := s.last
-	s.mu.Unlock()
+	var rep *report.Report
+	if name := r.URL.Query().Get("report"); name != "" {
+		var err error
+		if rep, err = loadSavedReport(name); err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+	} else {
+		s.mu.Lock()
+		rep = s.last
+		s.mu.Unlock()
+	}
 	if rep == nil {
 		http.Error(w, "no scan has run yet", http.StatusNotFound)
 		return
