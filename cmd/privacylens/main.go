@@ -55,6 +55,8 @@ func main() {
 			os.Exit(runUninstall(os.Args[2:]))
 		case "status":
 			os.Exit(runStatus(os.Args[2:]))
+		case "update":
+			os.Exit(runUpdate(os.Args[2:]))
 		}
 	}
 	os.Exit(run())
@@ -79,6 +81,7 @@ func runGUI(args []string) int {
 		OpenBrowser: !*noOpen,
 		Tool:        toolName,
 		Version:     version,
+		UpdateRepo:  buildinfo.UpdateRepo,
 	}); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return exitError
@@ -123,6 +126,7 @@ Usage:
   privacylens install [-no-ocr]     set up this computer (needs admin rights)
   privacylens status                check that the installation is healthy
   privacylens uninstall [-purge]    remove it again
+  privacylens update [-check] [-yes]  install the newest release from GitHub (needs admin rights)
 
 Scans the given files and directories for SSNs, credit cards, driver's
 licenses, medical identifiers (HIPAA), bank details, and other PII, then

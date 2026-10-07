@@ -25,6 +25,8 @@ SetCompressor /SOLID lzma
 !include "x64.nsh"
 !include "LogicLib.nsh"
 !include "Sections.nsh"
+
+Var Relaunch ; "1" when /RELAUNCH was given (see .onInit)
 !include "FileFunc.nsh"
 
 !ifndef VERSION
@@ -162,6 +164,9 @@ Section "-Configure"
   IntFmt $0 "0x%08X" $0
   WriteRegDWORD HKLM "${ARP}" "EstimatedSize" "$0"
   DetailPrint "Listed under Settings > Apps > Installed apps"
+  ${If} $Relaunch == "1"
+    Call LaunchApp
+  ${EndIf}
 SectionEnd
 
 ; After the sections: it refers to ${SecOCR}, which exists only once the
@@ -179,6 +184,15 @@ Function .onInit
   ${GetOptions} $0 "/NOOCR" $1
   ${IfNot} ${Errors}
     !insertmacro UnselectSection ${SecOCR}
+  ${EndIf}
+  ; /RELAUNCH reopens PrivacyLens (as the signed-in user) once setup is
+  ; done. The in-app updater runs "Setup /S /RELAUNCH": setup closes the
+  ; running launcher to replace it, so it is setup that brings it back.
+  StrCpy $Relaunch "0"
+  ClearErrors
+  ${GetOptions} $0 "/RELAUNCH" $1
+  ${IfNot} ${Errors}
+    StrCpy $Relaunch "1"
   ${EndIf}
 FunctionEnd
 

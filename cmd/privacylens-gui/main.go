@@ -29,6 +29,7 @@ func main() {
 		OpenBrowser: true,
 		Tool:        buildinfo.Tool,
 		Version:     buildinfo.Version,
+		UpdateRepo:  buildinfo.UpdateRepo,
 		// No console means no Ctrl+C: stop on our own once every
 		// PrivacyLens tab has been closed for a while.
 		IdleExit: 15 * time.Minute,

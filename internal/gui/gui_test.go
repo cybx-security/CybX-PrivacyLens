@@ -162,6 +162,9 @@ func TestIndexEscapesDefaultPath(t *testing.T) {
 	if strings.Contains(page, "R&D <x>") || !strings.Contains(page, "R&amp;D &lt;x&gt;") {
 		t.Error("default path was not HTML-escaped in the page")
 	}
+	if strings.Contains(page, "__VERSION__") || strings.Count(page, "version test") == 0 || !strings.Contains(page, "<title>PrivacyLens vtest</title>") {
+		t.Error("every __VERSION__ placeholder must be filled in")
+	}
 }
 
 func stopped(s *server) bool {

@@ -279,6 +279,38 @@ profile and the rest shows up in the error count.
   apostrophe so scanned content can never execute when the report is opened;
   use JSON when a program needs the exact values
 
+### Updates
+
+Installed copies update themselves from GitHub Releases. **Check for
+updates** (top right of the GUI) compares the running version with the
+newest release of the repository named in `buildinfo.UpdateRepo`; if one is
+newer, **Install update** downloads the installer for this platform,
+verifies it against the release's `SHA256SUMS.txt`, and runs it: the
+`.pkg` through macOS's own administrator-password dialog, the Windows setup
+wizard silently after a UAC prompt. The new version reopens in a new browser
+tab by itself (on Windows the wizard closes and relaunches the app). On
+Linux the verified archive is downloaded and the page shows the two commands
+that finish the job. The command line does the same: `privacylens update`
+(`-check` only reports, exit code 1 when an update exists; `-yes` skips the
+prompt), run with `sudo` or from an elevated prompt.
+
+Publishing a release:
+
+```bash
+./scripts/build-all.sh && ./scripts/release.sh [notes.md]
+```
+
+`release.sh` needs the GitHub CLI signed in (`brew install gh; gh auth
+login`), writes `SHA256SUMS.txt`, and creates release `v<version>` with
+every package attached. The repository must be **public** — customers fetch
+releases anonymously — so a private source repo should publish to a separate
+public releases-only repo (set `UpdateRepo` accordingly). Releases are not
+code-signed yet: integrity rests on HTTPS to GitHub and the checksums, so
+whoever can publish a release to that repository can update every customer
+machine. Protect that account with 2FA and keep the repository's release
+permissions tight. `PRIVACYLENS_UPDATE_API` points the check at a different
+API root for testing.
+
 ### Auto-save (zero-configuration default)
 
 Results are never silently lost. When no output flags or manifest outputs

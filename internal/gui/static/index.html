@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PrivacyLens</title>
+<title>PrivacyLens v__VERSION__</title>
 <style>
   :root {
     --bg: #f6f7f9; --card: #ffffff; --ink: #1c2733; --muted: #66727f;
@@ -88,17 +88,32 @@
   .access li { margin: 2px 0; }
   .access .btns { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 10px; }
   .access .btns a { font-size: 13px; color: var(--accent); }
+  .hbtn { background: transparent; border: 1px solid #5b6875; color: #dfe6ee; padding: 6px 14px; font-size: 13px; }
+  .hbtn:disabled { background: transparent; color: #8a97a4; cursor: default; }
+  #updateBox { border-bottom: 1px solid var(--line); padding: 12px 32px; font-size: 14px; background: #eef4ff; }
+  #updateBox.ok { background: #e9f7ef; }
+  #updateBox.err { background: #fdecea; }
+  #updateBox .inner { max-width: 1200px; margin: 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+  #updateBox .inner button { padding: 7px 16px; font-size: 14px; }
+  #updateBox .ver { font-weight: 600; }
+  #updateBox pre { margin: 0; padding: 8px 12px; background: #fff; border: 1px solid var(--line); border-radius: 6px; font-size: 12.5px; white-space: pre-wrap; word-break: break-all; flex-basis: 100%; }
+  #updateBox details { flex-basis: 100%; font-size: 13px; }
+  #updateBox details pre { margin-top: 6px; }
+  #updTrack { flex: 1; min-width: 160px; max-width: 320px; height: 6px; background: #cdd6e0; border-radius: 3px; overflow: hidden; }
+  #updFill { height: 100%; width: 0; background: var(--accent); transition: width .3s; }
   .spinner { display: inline-block; width: 16px; height: 16px; border: 2.5px solid #cdd6e0; border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -3px; margin-right: 8px; }
   @keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
-<header><h1>PrivacyLens</h1><span class="sub">PII discovery scanner · v__VERSION__</span>
-  <button id="quitBtn" type="button" title="Stop PrivacyLens on this computer" style="margin-left:auto;background:transparent;border:1px solid #5b6875;color:#dfe6ee;padding:6px 14px;font-size:13px">Quit PrivacyLens</button>
+<header><h1>PrivacyLens</h1><span class="sub">PII discovery scanner · version __VERSION__</span>
+  <button id="updateBtn" type="button" class="hbtn" title="Look for a newer version of PrivacyLens on GitHub" style="margin-left:auto">Check for updates</button>
+  <button id="quitBtn" type="button" class="hbtn" title="Stop PrivacyLens on this computer">Quit PrivacyLens</button>
 </header>
+<div id="updateBox" class="hidden" role="status" aria-live="polite"><div class="inner" id="updateInner"></div></div>
 <div id="stopped" class="hidden" role="alert" style="background:#fdecea;border-bottom:1px solid #f5c6c1;padding:14px 32px;font-size:14px">
-  <strong>PrivacyLens is no longer running.</strong> <span id="stoppedWhy"></span>
-  Reports that were saved are still on this computer. To scan again, start PrivacyLens again and close this tab.
+  <strong id="stoppedHead">PrivacyLens is no longer running.</strong> <span id="stoppedWhy"></span>
+  <span id="stoppedTail">Reports that were saved are still on this computer. To scan again, start PrivacyLens again and close this tab.</span>
 </div>
 <main>
   <nav class="tabs" role="tablist">
@@ -313,8 +328,14 @@
   // launcher exits on its own once none is), and tells the user plainly
   // when the server has gone away instead of failing on the next click.
   var stopped = false, missedPings = 0;
+  var updating = false; // an update is replacing this version
   function showStopped(why) {
     stopped = true;
+    if (updating) {
+      byId('stoppedHead').textContent = 'PrivacyLens is restarting with the new version.';
+      byId('stoppedTail').textContent = 'It reopens in a new browser tab by itself; you can close this one.';
+      why = '';
+    }
     document.getElementById('stoppedWhy').textContent = why || '';
     document.getElementById('stopped').classList.remove('hidden');
     scanBtn.disabled = true;
@@ -325,7 +346,7 @@
     fetch('/api/ping', { headers: { 'X-PL-Token': TOKEN } }).then(function (r) {
       missedPings = r.ok ? 0 : missedPings + 1;
     }).catch(function () { missedPings++; }).then(function () {
-      if (missedPings >= 2 && !scanController) { showStopped('It was closed or stopped after sitting idle.'); }
+      if (missedPings >= (updating ? 1 : 2) && !scanController) { showStopped('It was closed or stopped after sitting idle.'); }
     });
   }
   setInterval(ping, 20000);
@@ -473,6 +494,109 @@
     fetch('/api/mailaccess/settings' + q, { method: 'POST', headers: { 'X-PL-Token': TOKEN } })
       .then(function (r) { if (!r.ok) { return r.text().then(function (t) { throw new Error(t); }); } })
       .catch(function (err) { setStatus(esc(err.message), true); });
+  });
+
+  // ---- Updates ---------------------------------------------------------
+  // "Check for updates" asks the server to look at GitHub Releases. If a
+  // newer version exists, one more click downloads it (checksum-verified),
+  // runs the installer, and the new version reopens in a new tab.
+  var updateBtn = byId('updateBtn');
+  var updateBox = byId('updateBox');
+  var updateInner = byId('updateInner');
+  var updTimer = null;
+  function showUpdate(cls, html) {
+    updateBox.className = cls || '';
+    updateInner.innerHTML = html;
+  }
+  function notesBlock(notes) {
+    return notes ? '<details><summary>What\'s new</summary><pre>' + esc(notes) + '</pre></details>' : '';
+  }
+  function fmtMB(n) { return (n / 1048576).toFixed(1) + ' MB'; }
+  function checkForUpdates() {
+    updateBtn.disabled = true;
+    showUpdate('', '<span class="spinner"></span>Checking for a newer version… you have <span class="ver">version ' + esc(updateBtn.dataset.version) + '</span>.');
+    fetch('/api/update/check', { headers: { 'X-PL-Token': TOKEN } })
+      .then(function (r) { return r.json(); })
+      .then(function (u) {
+        updateBtn.disabled = stopped;
+        if (u.error && !u.latest) {
+          showUpdate('err', '<strong>Could not check for updates.</strong> ' + esc(u.error) +
+            ' <button type="button" class="ghost" id="updRetry">Try again</button> <a href="#" id="updClose" style="margin-left:auto">Close</a>');
+          return;
+        }
+        if (!u.available) {
+          showUpdate('ok', '<strong>You have the latest version</strong> (' + esc(u.current) + ').' +
+            (u.published_at ? ' Newest release: ' + esc(u.latest) + ', ' + fmtWhen(u.published_at) + '.' : '') +
+            ' <a href="#" id="updClose" style="margin-left:auto">Close</a>');
+          return;
+        }
+        var how = u.manual
+          ? 'It will be downloaded and verified; a short terminal command finishes the install.'
+          : 'Installing takes about a minute and asks for your ' + (navigator.platform.indexOf('Win') === 0 ? 'permission' : 'password') + '. PrivacyLens reopens by itself when it is done.';
+        showUpdate('', '<strong>Version ' + esc(u.latest) + ' is available</strong> — you have ' + esc(u.current) + '.' +
+          (u.published_at ? ' Released ' + fmtWhen(u.published_at) + '.' : '') +
+          (u.size ? ' Download: ' + fmtMB(u.size) + '.' : '') +
+          ' <button type="button" id="updInstall">Install update</button>' +
+          (u.url ? ' <a href="' + esc(u.url) + '" target="_blank" rel="noopener">Release page</a>' : '') +
+          ' <a href="#" id="updClose" style="margin-left:auto">Not now</a>' +
+          '<div style="flex-basis:100%;font-size:13px;color:var(--muted)">' + how + '</div>' +
+          notesBlock(u.notes));
+      })
+      .catch(function (err) {
+        updateBtn.disabled = stopped;
+        showUpdate('err', '<strong>Could not check for updates.</strong> ' + esc(err.message) + ' <a href="#" id="updClose" style="margin-left:auto">Close</a>');
+      });
+  }
+  function renderUpdateStatus(st) {
+    if (st.phase === 'downloading') {
+      var pct = st.total > 0 ? Math.min(100, Math.round(st.done * 100 / st.total)) : 0;
+      showUpdate('', '<span class="spinner"></span>Downloading version ' + esc(st.version) + '… ' + pct + '%' +
+        '<div id="updTrack" role="progressbar" aria-valuenow="' + pct + '" aria-valuemin="0" aria-valuemax="100"><div id="updFill" style="width:' + pct + '%"></div></div>');
+    } else if (st.phase === 'installing' || st.phase === 'relaunching') {
+      showUpdate('', '<span class="spinner"></span><strong>' + (st.phase === 'installing' ? 'Installing version ' + esc(st.version) + '…' : 'Reopening…') + '</strong> ' + esc(st.message || ''));
+    } else if (st.phase === 'manual') {
+      showUpdate('ok', '<strong>Version ' + esc(st.version) + ' downloaded and verified.</strong> ' + esc(st.message || '') +
+        '<pre>' + esc(st.steps || '') + '</pre>');
+    } else if (st.phase === 'done') {
+      showUpdate('ok', '<strong>Update complete.</strong> ' + esc(st.message || ''));
+    } else if (st.phase === 'error') {
+      updating = false;
+      updateBtn.disabled = stopped;
+      showUpdate('err', '<strong>The update did not finish:</strong> ' + esc(st.error || 'unknown error') +
+        ' <button type="button" class="ghost" id="updRetry">Check again</button> <a href="#" id="updClose" style="margin-left:auto">Close</a>');
+    }
+  }
+  function pollUpdate() {
+    fetch('/api/update/status', { headers: { 'X-PL-Token': TOKEN } })
+      .then(function (r) { return r.json(); })
+      .then(function (st) {
+        renderUpdateStatus(st);
+        if (st.phase === 'done' || st.phase === 'error' || st.phase === 'manual') { clearInterval(updTimer); updTimer = null; }
+      })
+      .catch(function () {
+        // The old version has gone away mid-update: the installer (or the
+        // relaunch) stopped it. The heartbeat shows the restart banner.
+      });
+  }
+  function installUpdate() {
+    if (scanController) { showUpdate('err', 'A scan is running. Wait for it to finish or cancel it, then install the update.'); return; }
+    updating = true;
+    updateBtn.disabled = true;
+    fetch('/api/update/install', { method: 'POST', headers: { 'X-PL-Token': TOKEN } })
+      .then(function (r) { if (!r.ok) { return r.text().then(function (t) { throw new Error(t); }); } })
+      .then(function () {
+        renderUpdateStatus({ phase: 'downloading', done: 0, total: 0, version: '' });
+        updTimer = setInterval(pollUpdate, 700);
+      })
+      .catch(function (err) { renderUpdateStatus({ phase: 'error', error: err.message }); });
+  }
+  updateBtn.dataset.version = document.title.replace(/^PrivacyLens v/, '');
+  updateBtn.addEventListener('click', checkForUpdates);
+  updateBox.addEventListener('click', function (ev) {
+    var t = ev.target;
+    if (t.id === 'updInstall') { installUpdate(); }
+    else if (t.id === 'updRetry') { checkForUpdates(); }
+    else if (t.id === 'updClose') { ev.preventDefault(); updateBox.className = 'hidden'; }
   });
 
   // ---- Tabs ------------------------------------------------------------

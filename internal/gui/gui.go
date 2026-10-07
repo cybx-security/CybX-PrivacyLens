@@ -41,6 +41,9 @@ type Options struct {
 	OpenBrowser bool
 	Tool        string
 	Version     string
+	// UpdateRepo is the GitHub owner/name whose Releases carry new
+	// versions; empty disables the update check.
+	UpdateRepo string
 	// IdleExit stops the server once no page has contacted it for this long
 	// and no scan is running. Zero means run until stopped. The double-click
 	// launcher sets it: with no console there is no Ctrl+C, and without it
@@ -74,6 +77,7 @@ type server struct {
 
 	history    historyCache // summaries of saved reports, for the Past scans tab
 	settingsMu sync.Mutex   // serializes writes of the saved form state
+	upd        updater      // state of a self-update in progress
 }
 
 // progressState is what /api/progress returns. During the discovery walk
@@ -106,6 +110,9 @@ func Run(opts Options) error {
 	mux.HandleFunc("/api/history", s.auth(s.handleHistory))
 	mux.HandleFunc("/api/history/report", s.auth(s.handleHistoryReport))
 	mux.HandleFunc("/api/settings", s.auth(s.handleSettings))
+	mux.HandleFunc("/api/update/check", s.auth(s.handleUpdateCheck))
+	mux.HandleFunc("/api/update/install", s.auth(s.handleUpdateInstall))
+	mux.HandleFunc("/api/update/status", s.auth(s.handleUpdateStatus))
 	mux.HandleFunc("/api/mailaccess", s.auth(s.handleMailAccess))
 	mux.HandleFunc("/api/mailaccess/settings", s.auth(s.handleOpenDiskAccess))
 	mux.HandleFunc("/api/ping", s.auth(s.handlePing))
@@ -242,7 +249,7 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	// must land in the textarea as text, not markup.
 	page = bytes.Replace(page, []byte("__DEFAULT_PATHS__"), []byte(html.EscapeString(defaultPath)), 1)
 	page = bytes.Replace(page, []byte("__CATEGORIES__"), cats, 1)
-	page = bytes.Replace(page, []byte("__VERSION__"), []byte(html.EscapeString(s.opts.Version)), 1)
+	page = bytes.ReplaceAll(page, []byte("__VERSION__"), []byte(html.EscapeString(s.opts.Version)))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write(page)
 }
