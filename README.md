@@ -300,6 +300,12 @@ Publishing a release:
 ./scripts/build-all.sh && ./scripts/release.sh [notes.md]
 ```
 
+Pushing a `v<version>` tag instead runs the Release workflow
+(`.github/workflows/release.yml`), which builds every package on GitHub's
+macOS runner and opens a **draft** release with them attached. To ship it,
+open that draft under Releases and click **Publish release** — do not create
+a new release for the tag, which would be empty; the files are on the draft.
+
 `release.sh` needs the GitHub CLI signed in (`brew install gh; gh auth
 login`), writes `SHA256SUMS.txt`, and creates release `v<version>` with
 every package attached. The repository must be **public** — customers fetch
