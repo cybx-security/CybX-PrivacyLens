@@ -84,6 +84,17 @@ func Check(ctx context.Context, repo, current string) (rel *Release, newer bool,
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, false, fmt.Errorf("no releases found at github.com/%s (is the repository public, with at least one release?)", repo)
 	}
+	if resp.StatusCode == http.StatusForbidden && resp.Header.Get("X-RateLimit-Remaining") == "0" {
+		// Anonymous API calls are limited per source IP (60/hour); an
+		// office full of machines behind one NAT can hit it.
+		wait := "a little while"
+		if reset, err := strconv.ParseInt(resp.Header.Get("X-RateLimit-Reset"), 10, 64); err == nil {
+			if d := time.Until(time.Unix(reset, 0)).Round(time.Minute); d > 0 {
+				wait = fmt.Sprintf("about %d minute(s)", int(d.Minutes())+1)
+			}
+		}
+		return nil, false, fmt.Errorf("GitHub is limiting update checks from this network right now; try again in %s", wait)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, false, fmt.Errorf("GitHub answered %s", resp.Status)
 	}

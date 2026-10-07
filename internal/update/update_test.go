@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestCompareVersions(t *testing.T) {
@@ -146,6 +147,22 @@ func TestDownloadAcceptsWorkflowChecksumFile(t *testing.T) {
 	}
 	if _, err := Download(context.Background(), rel, t.TempDir(), nil); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCheckRateLimited(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-RateLimit-Remaining", "0")
+		w.Header().Set("X-RateLimit-Reset", fmt.Sprint(time.Now().Add(20*time.Minute).Unix()))
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	t.Cleanup(srv.Close)
+	saved := APIBase
+	APIBase = srv.URL
+	t.Cleanup(func() { APIBase = saved })
+	_, _, err := Check(context.Background(), "acme/pl", "0.9.10")
+	if err == nil || !strings.Contains(err.Error(), "limiting update checks") || !strings.Contains(err.Error(), "minute") {
+		t.Errorf("rate limit should be explained with a wait time: %v", err)
 	}
 }
 
