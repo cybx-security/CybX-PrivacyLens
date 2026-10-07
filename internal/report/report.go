@@ -168,14 +168,14 @@ func WriteJSON(w io.Writer, r *Report) error {
 func WriteCSV(w io.Writer, r *Report) error {
 	out := r.ForOutput()
 	cw := csv.NewWriter(w)
-	if err := cw.Write([]string{"path", "file_name", "category", "confidence", "line", "match", "context", "folder", "subject", "date", "from"}); err != nil {
+	if err := cw.Write([]string{"path", "file_name", "category", "confidence", "line", "match", "context", "folder", "subject", "date", "from", "attachment"}); err != nil {
 		return err
 	}
 	for _, f := range out.Findings {
 		if err := cw.Write([]string{
 			csvSafe(f.Path), csvSafe(f.FileName), f.Category, f.Confidence,
 			fmt.Sprintf("%d", f.Line), csvSafe(f.Match), csvSafe(f.Context), csvSafe(f.Folder), csvSafe(f.Subject),
-			f.Date, csvSafe(f.From),
+			f.Date, csvSafe(f.From), csvSafe(f.Attachment),
 		}); err != nil {
 			return err
 		}
@@ -286,6 +286,9 @@ func PrintConsole(w io.Writer, r *Report, verbose bool) {
 		fmt.Fprintf(w, "Documents NOT searched: %d in formats PrivacyLens cannot open (old .doc/.xls/.ppt, .msg, OpenDocument…); re-save as .docx/.xlsx/.pdf to scan them (-verbose lists them)\n", n)
 	}
 	fmt.Fprintf(w, "Findings: %d across %d files\n", len(r.Findings), r.filesWithFindings())
+	if n := r.Stats.AttachmentsScanned; n > 0 {
+		fmt.Fprintf(w, "Mail attachments read: %d\n", n)
+	}
 	for _, warn := range r.Stats.Warnings {
 		fmt.Fprintf(w, "\nWARNING: %s\n", warn)
 	}
@@ -310,9 +313,14 @@ func PrintConsole(w io.Writer, r *Report, verbose bool) {
 				loc = fmt.Sprintf("page %d, line %d", f.Page, f.Line)
 			}
 			if f.Folder != "" || f.Subject != "" {
-				loc = fmt.Sprintf("%s / %q (message %d)", f.Folder, f.Subject, f.Line)
+				loc = fmt.Sprintf("%s / %q", f.Folder, f.Subject)
 				if f.Date != "" || f.From != "" {
 					loc += fmt.Sprintf(" [%s]", strings.TrimSpace(f.Date+" "+f.From))
+				}
+				if f.Attachment != "" {
+					loc += fmt.Sprintf(" attachment %q line %d", f.Attachment, f.Line)
+				} else {
+					loc += fmt.Sprintf(" (message %d)", f.Line)
 				}
 			}
 			fmt.Fprintf(w, "  [%s] %s  %s: %q\n",

@@ -282,10 +282,7 @@ func TestMailOnlyScan(t *testing.T) {
 		"Outlook 15 Profiles", "Main Profile", "Data", "Message Sources", "0", "x_7.olk15MsgSource")
 	writeFile(t, macMsg, "From: a@b.com\r\nSubject: payroll\r\nContent-Type: text/plain\r\n\r\nher ssn 219-09-9999\r\n")
 
-	stub := func(path string) ([]extract.MailItem, error) {
-		if extract.IsMessageSource(path) {
-			return extract.ReadMailStore(path)
-		}
+	stubItems := func(path string) ([]extract.MailItem, error) {
 		if strings.HasSuffix(path, ".ost") {
 			return []extract.MailItem{
 				{Folder: "Inbox", Subject: "re: onboarding", Index: 3, Text: "his ssn is 123-45-6789 thanks"},
@@ -296,9 +293,19 @@ func TestMailOnlyScan(t *testing.T) {
 			{Folder: "Sent", Subject: "card", Index: 1, Text: "card 4111 1111 1111 1111"},
 		}, errFakeCorrupt
 	}
+	stub := func(path string, fn func(extract.MailItem)) error {
+		if extract.IsMessageSource(path) {
+			return extract.WalkMailStore(path, fn)
+		}
+		items, err := stubItems(path)
+		for _, it := range items {
+			fn(it)
+		}
+		return err
+	}
 
 	findings, stats, err := Scan([]string{root}, Options{
-		MaxSizeBytes: 1 << 20, Workers: 2, MailOnly: true, mailRead: stub,
+		MaxSizeBytes: 1 << 20, Workers: 2, MailOnly: true, mailWalk: stub,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -705,4 +712,44 @@ func noOutlookLocations(t *testing.T) {
 	saved := outlookDataLocations
 	outlookDataLocations = func() []string { return nil }
 	t.Cleanup(func() { outlookDataLocations = saved })
+}
+
+// TestMailAttachmentsScanned: a message whose body is clean but whose
+// attachment holds PII yields a finding tagged with the attachment name
+// and the message's subject; the extracted copy is gone afterwards.
+func TestMailAttachmentsScanned(t *testing.T) {
+	noOutlookLocations(t)
+	root := t.TempDir()
+	msg := filepath.Join(root, "Outlook 15 Profiles", "Main Profile", "Data", "Message Sources", "0", "a.olk15MsgSource")
+	writeFile(t, msg, "From: hr@example.com\r\n"+
+		"Subject: Onboarding forms\r\n"+
+		"Date: Tue, 07 Oct 2026 09:15:00 -0400\r\n"+
+		"Content-Type: multipart/mixed; boundary=\"b\"\r\n\r\n"+
+		"--b\r\nContent-Type: text/plain\r\n\r\nForms attached, nothing sensitive here.\r\n"+
+		"--b\r\nContent-Type: text/csv; name=\"new-hires.csv\"\r\nContent-Disposition: attachment; filename=\"new-hires.csv\"\r\n\r\n"+
+		"name,ssn\r\nJane,219-09-9999\r\n"+
+		"--b\r\nContent-Type: application/zip; name=\"photos.zip\"\r\nContent-Disposition: attachment; filename=\"photos.zip\"\r\nContent-Transfer-Encoding: base64\r\n\r\nUEsDBAo=\r\n"+
+		"--b--\r\n")
+	findings, stats, err := Scan([]string{root}, Options{MaxSizeBytes: 1 << 20, Workers: 1, MailOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.AttachmentsScanned != 1 {
+		t.Errorf("attachments scanned = %d, want 1 (the zip is skipped)", stats.AttachmentsScanned)
+	}
+	var ssn *Finding
+	for i := range findings {
+		if findings[i].Category == "SSN" {
+			ssn = &findings[i]
+		}
+	}
+	if ssn == nil {
+		t.Fatalf("no SSN finding from the attachment: %+v", findings)
+	}
+	if ssn.Attachment != "new-hires.csv" || ssn.FileName != "new-hires.csv" || ssn.Line != 2 || ssn.Subject != "Onboarding forms" || ssn.Date != "2026-10-07 09:15" || ssn.Path != msg {
+		t.Errorf("attachment finding = %+v", *ssn)
+	}
+	if left, _ := filepath.Glob(filepath.Join(os.TempDir(), "privacylens-mail-*")); len(left) != 0 {
+		t.Errorf("attachment temp dirs left behind: %v", left)
+	}
 }

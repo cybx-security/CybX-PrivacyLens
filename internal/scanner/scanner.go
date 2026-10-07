@@ -74,9 +74,9 @@ type Options struct {
 	// emailExcludes is ExcludeEmails normalized by Scan.
 	emailExcludes []string
 
-	// mailRead reads a mail store; tests stub it. Nil means the real
+	// mailWalk iterates a mail store; tests stub it. Nil means the real
 	// extract.ReadMailStore.
-	mailRead func(string) ([]extract.MailItem, error)
+	mailWalk func(string, func(extract.MailItem)) error
 
 	// OnFindings, if set, receives each file's findings as soon as that file
 	// has been scanned, letting callers stream results (e.g. to a log a SIEM
@@ -120,6 +120,9 @@ type Finding struct {
 	// when, so the person cleaning up can find it in Outlook.
 	From string `json:"from,omitempty"`
 	Date string `json:"date,omitempty"`
+	// Attachment names the message attachment the finding was in (Line is
+	// then the line within that attachment); empty for the message body.
+	Attachment string `json:"attachment,omitempty"`
 	// Redact holds secret values that share this finding's line but are not
 	// themselves the match — e.g. the password column of a credential-export
 	// CSV sitting right next to a matched email. Masked output hides them
@@ -145,6 +148,9 @@ type Stats struct {
 	// MailRoots are the Outlook data locations a mail scan searched on its
 	// own initiative, beyond the roots it was given.
 	MailRoots []string `json:"mail_roots,omitempty"`
+	// AttachmentsScanned counts mail attachments whose contents were read
+	// during a mail scan (on top of the messages themselves).
+	AttachmentsScanned int `json:"attachments_scanned,omitempty"`
 	// Warnings are coverage problems that need the user to act — above all
 	// macOS refusing access to Outlook's mailbox until PrivacyLens has Full
 	// Disk Access. They must be shown prominently: each one means part of
@@ -163,6 +169,12 @@ type fileResult struct {
 	ocr       bool  // scanned via OCR
 	err       error
 	path      string
+	// Mail stores: attachments read, and the ones that could not be
+	// (listed as "<store> › <subject> › <attachment>").
+	attachments int
+	attNeedOCR  []string
+	attUnread   []string
+	attErrors   []string
 }
 
 // Scan walks each root (a directory or single file), scans every supported
@@ -348,6 +360,12 @@ func ScanContext(ctx context.Context, roots []string, opts Options) ([]Finding, 
 			if r.warn != nil {
 				stats.Errors = append(stats.Errors, fmt.Sprintf("%s: partially read: %s", r.path, oneLine(r.warn.Error())))
 			}
+			stats.AttachmentsScanned += r.attachments
+			stats.FilesNeedOCR += len(r.attNeedOCR)
+			stats.NeedOCR = append(stats.NeedOCR, r.attNeedOCR...)
+			stats.FilesDocs += len(r.attUnread)
+			stats.UnreadDocs = append(stats.UnreadDocs, r.attUnread...)
+			stats.Errors = append(stats.Errors, r.attErrors...)
 			stats.FilesScanned++
 			if r.ocr {
 				stats.FilesOCR++
@@ -823,39 +841,77 @@ func mailAccessWarning(p string) string {
 // Line holding the item's position in its folder. A partially corrupt
 // store keeps its readable findings; the problem lands in Stats.Errors.
 func scanMailStore(path string, opts Options) fileResult {
-	readMail := opts.mailRead
-	if readMail == nil {
-		readMail = extract.ReadMailStore
+	walk := opts.mailWalk
+	if walk == nil {
+		walk = extract.WalkMailStore
 	}
-	items, rerr := readMail(path)
-	if len(items) == 0 && rerr != nil {
-		return fileResult{path: path, err: rerr}
-	}
+	res := fileResult{path: path}
 	var findings []Finding
-	for _, item := range items {
-		for _, m := range detect.ScanOnly(item.Text, opts.categorySet) {
-			if m.Confidence < opts.MinConfidence {
+	werr := walk(path, func(item extract.MailItem) {
+		findings = append(findings, mailFindings(path, item, "", item.Text, opts)...)
+		for _, att := range item.Attachments {
+			where := fmt.Sprintf("%s › %s › %s", path, item.Subject, att.Name)
+			text, status, err := extract.FromFile(att.Path)
+			switch {
+			case err != nil:
+				res.attErrors = append(res.attErrors, fmt.Sprintf("%s: %s", where, oneLine(err.Error())))
+				continue
+			case status == extract.StatusNeedsOCR:
+				res.attNeedOCR = append(res.attNeedOCR, where)
+				continue
+			case status == extract.StatusUnreadableDoc:
+				res.attUnread = append(res.attUnread, where)
+				continue
+			case status == extract.StatusUnsupported:
 				continue
 			}
-			if opts.excludedEmail(m.Category, m.Value) {
-				continue
-			}
-			findings = append(findings, Finding{
-				Path:       path,
-				FileName:   filepath.Base(path),
-				Category:   m.Category,
-				Confidence: m.Confidence.String(),
-				Line:       item.Index,
-				Folder:     item.Folder,
-				Subject:    item.Subject,
-				From:       item.From,
-				Date:       mailDate(item.Date),
-				Match:      m.Value,
-				Context:    contextSnippet(item.Text, m),
-			})
+			res.attachments++
+			findings = append(findings, mailFindings(path, item, att.Name, text, opts)...)
 		}
+	})
+	if len(findings) == 0 && res.attachments == 0 && werr != nil {
+		return fileResult{path: path, err: werr}
 	}
-	return fileResult{path: path, findings: findings, warn: rerr}
+	res.findings, res.warn = findings, werr
+	return res
+}
+
+// mailFindings runs the detectors over one piece of a mail item — the
+// message text (attachment == "") or an attachment's extracted text — and
+// tags each finding with the message's folder, subject, sender, and date.
+// Line is the item's position in its folder for message text, and the
+// line within the attachment otherwise.
+func mailFindings(path string, item extract.MailItem, attachment, text string, opts Options) []Finding {
+	var out []Finding
+	pos := newLocator(strings.ContainsRune(text, '\f'))
+	for _, m := range detect.ScanOnly(text, opts.categorySet) {
+		line, page := pos.advance(text, m.Start)
+		if m.Confidence < opts.MinConfidence {
+			continue
+		}
+		if opts.excludedEmail(m.Category, m.Value) {
+			continue
+		}
+		f := Finding{
+			Path:       path,
+			FileName:   filepath.Base(path),
+			Category:   m.Category,
+			Confidence: m.Confidence.String(),
+			Line:       item.Index,
+			Folder:     item.Folder,
+			Subject:    item.Subject,
+			From:       item.From,
+			Date:       mailDate(item.Date),
+			Attachment: attachment,
+			Match:      m.Value,
+			Context:    contextSnippet(text, m),
+		}
+		if attachment != "" {
+			f.FileName, f.Line, f.Page = attachment, line, page
+		}
+		out = append(out, f)
+	}
+	return out
 }
 
 // mailDate formats a message time for reports; empty when the store had

@@ -16,37 +16,43 @@ import (
 // is text plus inline images; anything beyond this is attachment bulk.
 const maxMessageBytes = 64 << 20
 
-// readMessageSource reads one Outlook for Mac message file: the raw MIME
-// message as received from the server. Headers and every text part (plain
-// and HTML) become the item's text; attachments are skipped — only their
-// names are kept — since their contents are binary payloads this scanner
-// would need to extract by type. A message the MIME parser cannot make
-// sense of is scanned as raw text rather than dropped: PII in a malformed
-// message is still PII.
-func readMessageSource(path string) ([]MailItem, error) {
+// walkMessageSource reads one Outlook for Mac message file — the raw MIME
+// message as received from the server — and delivers it to fn. Headers
+// and every text part (plain and HTML) become the item's text; attachments
+// are decoded to temporary files for fn to scan. A message the MIME parser
+// cannot make sense of is scanned as raw text rather than dropped: PII in
+// a malformed message is still PII.
+func walkMessageSource(path string, fn func(MailItem)) error {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer f.Close()
 	raw, err := io.ReadAll(io.LimitReader(f, maxMessageBytes))
 	if err != nil {
-		return nil, err
+		return err
 	}
-	msg, perr := mimeText(raw)
+	dir, err := attachmentDir()
+	if err != nil {
+		return err
+	}
+	msg, perr := mimeText(raw, dir)
 	if msg.Text == "" {
-		return nil, perr
+		os.RemoveAll(dir)
+		return perr
 	}
 	msg.Folder = outlookMacFolder(path)
 	msg.Index = 1
-	return []MailItem{msg}, perr
+	deliver(fn, msg, dir)
+	return perr
 }
 
 // mimeText flattens a MIME message to its subject, sender, date, and
-// scannable text (Folder and Index are left for the caller). The error
-// reports a parse problem the caller may want to note; text is still
-// returned alongside it whenever anything was readable.
-func mimeText(raw []byte) (item MailItem, err error) {
+// scannable text (Folder and Index are left for the caller), and decodes
+// its scannable attachments into dir. The error reports a parse problem
+// the caller may want to note; text is still returned alongside it
+// whenever anything was readable.
+func mimeText(raw []byte, dir string) (item MailItem, err error) {
 	// go-message parses attacker-controllable input; a crash must degrade
 	// to the raw-text fallback, never take down the scan.
 	defer func() {
@@ -80,6 +86,7 @@ func mimeText(raw []byte) (item MailItem, err error) {
 	}
 	var firstErr error
 	gotBody := false
+	attIndex := 0
 	for {
 		p, perr := mr.NextPart()
 		if perr == io.EOF {
@@ -113,6 +120,17 @@ func mimeText(raw []byte) (item MailItem, err error) {
 		case *mail.AttachmentHeader:
 			name, _ := ph.Filename()
 			line("Attachment: ", name)
+			attIndex++
+			if name != "" && attachmentScannable(name) && dir != "" {
+				att, aerr := saveAttachment(dir, attIndex, name, p.Body)
+				if aerr != nil {
+					if firstErr == nil {
+						firstErr = fmt.Errorf("attachment %q: %w", name, aerr)
+					}
+				} else {
+					item.Attachments = append(item.Attachments, att)
+				}
+			}
 			io.Copy(io.Discard, p.Body)
 		}
 	}

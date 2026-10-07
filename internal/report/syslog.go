@@ -258,6 +258,9 @@ func cefLine(tool, version string, f scanner.Finding) string {
 		if f.From != "" {
 			fields = append(fields, "suser="+cefExt(f.From))
 		}
+		if f.Attachment != "" {
+			fields = append(fields, "flexString1Label=attachment", "flexString1="+cefExt(f.Attachment))
+		}
 	}
 	ext := strings.Join(append(fields, "msg="+cefExt(f.Context)), " ")
 	return fmt.Sprintf("CEF:0|%s|%s|%s|%s|PII detected: %s|%d|%s",

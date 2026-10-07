@@ -91,6 +91,9 @@ var htmlTmpl = template.Must(template.New("report").Parse(`<!DOCTYPE html>
     <div class="card"><div class="num">{{len .Findings}}</div><div class="label">Total findings</div></div>
     <div class="card"><div class="num">{{.Stats.FilesScanned}}</div><div class="label">Files scanned</div></div>
     <div class="card"><div class="num">{{.Stats.FilesSkipped}}</div><div class="label">Files skipped</div></div>
+    {{if .Stats.AttachmentsScanned}}
+    <div class="card"><div class="num">{{.Stats.AttachmentsScanned}}</div><div class="label">Mail attachments read</div></div>
+    {{end}}
     {{if .Stats.FilesNeedOCR}}
     <div class="card ocr"><div class="num">{{.Stats.FilesNeedOCR}}</div><div class="label">Need OCR (not searched)</div></div>
     {{end}}
@@ -129,7 +132,7 @@ var htmlTmpl = template.Must(template.New("report").Parse(`<!DOCTYPE html>
           <tr data-cat="{{.Category}}" data-conf="{{.Confidence}}">
             <td class="cat">{{.Category}}</td>
             <td><span class="badge {{.Confidence}}">{{.Confidence}}</span></td>
-            <td class="loc">{{if or .Folder .Subject}}<strong>{{if .Subject}}{{.Subject}}{{else}}(no subject){{end}}</strong><div class="mailloc">{{if .Date}}{{.Date}} · {{end}}{{if .From}}{{.From}} · {{end}}{{.Folder}} · msg {{.Line}}</div>{{else if .Page}}page {{.Page}}, line {{.Line}}{{else}}line {{.Line}}{{end}}</td>
+            <td class="loc">{{if or .Folder .Subject}}<strong>{{if .Subject}}{{.Subject}}{{else}}(no subject){{end}}</strong><div class="mailloc">{{if .Date}}{{.Date}} · {{end}}{{if .From}}{{.From}} · {{end}}{{.Folder}}{{if .Attachment}} · attachment <b>{{.Attachment}}</b>, line {{.Line}}{{else}} · msg {{.Line}}{{end}}</div>{{else if .Page}}page {{.Page}}, line {{.Line}}{{else}}line {{.Line}}{{end}}</td>
             <td class="match">{{.Match}}</td>
             <td class="ctx">{{.Context}}</td>
           </tr>

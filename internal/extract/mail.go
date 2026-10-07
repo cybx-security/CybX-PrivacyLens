@@ -10,6 +10,7 @@ package extract
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -29,9 +30,9 @@ func init() {
 	})
 }
 
-// readPSTStore extracts every item from a .pst/.ost file (see
-// ReadMailStore for the partial-result contract).
-func readPSTStore(path string) (items []MailItem, err error) {
+// walkPSTStore delivers every item of a .pst/.ost file to fn (see
+// WalkMailStore for the partial-result contract).
+func walkPSTStore(path string, fn func(MailItem)) (err error) {
 	// go-pst parses attacker-controllable binary structures; a malformed
 	// store must degrade to a per-file error, never take down the scan.
 	defer func() {
@@ -42,12 +43,12 @@ func readPSTStore(path string) (items []MailItem, err error) {
 
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer f.Close()
 	pstFile, err := pst.New(f)
 	if err != nil {
-		return nil, fmt.Errorf("not readable as a mail store: %w", err)
+		return fmt.Errorf("not readable as a mail store: %w", err)
 	}
 	defer pstFile.Cleanup()
 
@@ -69,13 +70,19 @@ func readPSTStore(path string) (items []MailItem, err error) {
 		index := 0
 		for it.Next() {
 			index++
-			subject, from, date, text := itemText(it.Value())
+			m := it.Value()
+			subject, from, date, text := itemText(m)
 			if text == "" {
 				continue
 			}
-			items = append(items, MailItem{
+			item := MailItem{
 				Folder: folder.Name, Subject: subject, From: from, Date: date, Index: index, Text: text,
+			}
+			var dir string
+			item.Attachments, dir = pstAttachments(m, func(aerr error) {
+				keep(fmt.Errorf("folder %q, message %d (%s): %w", folder.Name, index, subject, aerr))
 			})
+			deliver(fn, item, dir)
 		}
 		if err := it.Err(); err != nil {
 			keep(fmt.Errorf("folder %q: %w", folder.Name, err))
@@ -83,7 +90,60 @@ func readPSTStore(path string) (items []MailItem, err error) {
 		return nil
 	})
 	keep(walkErr)
-	return items, firstErr
+	return firstErr
+}
+
+// pstAttachments extracts a message's scannable attachments to a fresh
+// temporary directory, reporting per-attachment problems through warn.
+// The directory is "" when nothing was extracted.
+func pstAttachments(m *pst.Message, warn func(error)) ([]MailAttachment, string) {
+	it, err := m.GetAttachmentIterator()
+	if eris.Is(err, pst.ErrAttachmentsNotFound) {
+		return nil, ""
+	}
+	if err != nil {
+		warn(fmt.Errorf("attachments: %w", err))
+		return nil, ""
+	}
+	var out []MailAttachment
+	dir := ""
+	index := 0
+	for it.Next() {
+		index++
+		a := it.Value()
+		name := a.GetAttachLongFilename()
+		if name == "" {
+			name = a.GetAttachFilename()
+		}
+		if name == "" {
+			name = fmt.Sprintf("attachment-%d%s", index, a.GetAttachExtension())
+		}
+		if !attachmentScannable(name) {
+			continue
+		}
+		if dir == "" {
+			if dir, err = attachmentDir(); err != nil {
+				warn(fmt.Errorf("attachments: %w", err))
+				return nil, ""
+			}
+		}
+		pr, pw := io.Pipe()
+		go func() {
+			_, werr := a.WriteTo(pw)
+			pw.CloseWithError(werr)
+		}()
+		att, serr := saveAttachment(dir, index, name, pr)
+		pr.Close()
+		if serr != nil {
+			warn(fmt.Errorf("attachment %q: %w", name, serr))
+			continue
+		}
+		out = append(out, att)
+	}
+	if err := it.Err(); err != nil {
+		warn(fmt.Errorf("attachments: %w", err))
+	}
+	return out, dir
 }
 
 // itemText flattens one store item to its subject, sender, date, and

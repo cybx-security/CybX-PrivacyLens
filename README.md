@@ -118,10 +118,18 @@ mail folder and subject. Two kinds of mailbox are understood:
 - **Outlook for Mac** — which has no `.pst` at all. Its mailbox is one raw
   MIME file per message (`.olk15MsgSource`) under
   `~/Library/Group Containers/UBF8T346G9.Office/Outlook/Outlook 15 Profiles/`.
-  Each message's headers and text/HTML parts are scanned; attachments are
-  listed by name only. Outlook keeps its folder tree in a database, so the
-  Folder column shows the profile (`Outlook for Mac — Main Profile`) rather
-  than Inbox/Sent.
+  Each message's headers and text/HTML parts are scanned. Outlook keeps its
+  folder tree in a database, so the Folder column shows the profile
+  (`Outlook for Mac — Main Profile`) rather than Inbox/Sent.
+
+Every finding from a mailbox carries the message's subject, date, and
+sender. **Attachments are scanned too**: each one is extracted to a
+temporary file for the moment it takes to read it with the same document
+extractors as a normal scan (Word, Excel, PowerPoint, PDF, text, images with
+OCR on), then deleted. Findings inside an attachment name it and give the
+line within it; archives and media files are skipped, and formats the scanner
+cannot open (`.doc`, `.msg`, …) are listed as not searched like any other
+document. Attachments over 256 MB are not extracted.
 
 A mail scan searches Outlook's own data folders on the machine automatically
 (`%LOCALAPPDATA%\Microsoft\Outlook` and `Documents\Outlook Files` on Windows,

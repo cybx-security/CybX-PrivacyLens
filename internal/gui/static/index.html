@@ -804,6 +804,9 @@
       '<div class="card"><div class="num">' + lastFindings.length + '</div><div class="label">Total findings</div></div>' +
       '<div class="card"><div class="num">' + (s.files_scanned || 0) + '</div><div class="label">Files scanned</div></div>' +
       '<div class="card"><div class="num">' + (s.files_skipped || 0) + '</div><div class="label">Files skipped</div></div>' +
+      ((s.attachments_scanned || 0) > 0
+        ? '<div class="card"><div class="num">' + s.attachments_scanned + '</div><div class="label">Mail attachments read</div></div>'
+        : '') +
       ((s.files_need_ocr || 0) > 0
         ? '<div class="card"><div class="num" style="color:var(--medium)">' + s.files_need_ocr + '</div><div class="label">Need OCR (not searched)</div></div>'
         : '') +
@@ -848,7 +851,7 @@
           var loc = f.folder || f.subject
             ? '<strong>' + esc(f.subject || '(no subject)') + '</strong>' +
               '<div style="color:var(--muted);font-size:11.5px;margin-top:2px">' +
-              [f.date, f.from, f.folder, 'msg ' + f.line].filter(Boolean).map(esc).join(' · ') + '</div>'
+              [f.date, f.from, f.folder, f.attachment ? 'attachment ' + f.attachment + ', line ' + f.line : 'msg ' + f.line].filter(Boolean).map(esc).join(' · ') + '</div>'
             : (f.page ? 'page ' + f.page + ', line ' + f.line : 'line ' + f.line);
           return '<tr data-cat="' + esc(f.category) + '" data-conf="' + esc(f.confidence) + '">' +
             '<td style="white-space:nowrap;font-weight:600;font-size:13px">' + esc(f.category) + '</td>' +

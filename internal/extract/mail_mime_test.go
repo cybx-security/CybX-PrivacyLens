@@ -89,3 +89,34 @@ func TestReadMessageSourceMalformed(t *testing.T) {
 		t.Errorf("folder = %q", items[0].Folder)
 	}
 }
+
+// WalkMailStore hands attachments over as temporary files that exist only
+// during the callback.
+func TestWalkMessageSourceAttachments(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "m.olk15MsgSource")
+	if err := os.WriteFile(path, []byte(sampleMIME), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var seen MailAttachment
+	err := WalkMailStore(path, func(it MailItem) {
+		if len(it.Attachments) != 1 {
+			t.Fatalf("attachments = %+v, want the PDF", it.Attachments)
+		}
+		seen = it.Attachments[0]
+		if seen.Name != "w4.pdf" || filepath.Ext(seen.Path) != ".pdf" || seen.Size == 0 {
+			t.Errorf("attachment = %+v", seen)
+		}
+		if _, err := os.Stat(seen.Path); err != nil {
+			t.Errorf("attachment file missing during callback: %v", err)
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(seen.Path); !os.IsNotExist(err) {
+		t.Error("attachment temp file should be removed after the callback")
+	}
+	if !attachmentScannable("x.docx") || attachmentScannable("x.zip") || !attachmentScannable("scan.jpg") || !attachmentScannable("README") {
+		t.Error("attachmentScannable has the wrong idea about types")
+	}
+}

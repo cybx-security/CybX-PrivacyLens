@@ -7,6 +7,7 @@
 package extract
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -86,16 +87,44 @@ type MailItem struct {
 	Date  time.Time
 	Index int    // 1-based position within its folder
 	Text  string // subject, sender, recipients, and body, newline-joined
+	// Attachments are the message's attachments, extracted to temporary
+	// files for the duration of the WalkMailStore callback.
+	Attachments []MailAttachment
 }
 
-// ReadMailStore extracts every item from a mail store: all messages of a
-// .pst/.ost, or the single message of an Outlook for Mac message file. A
-// partially corrupt store still yields whatever was readable: the items
-// read so far are returned alongside the first error encountered, and the
-// caller decides whether partial coverage is worth reporting.
-func ReadMailStore(path string) ([]MailItem, error) {
+// WalkMailStore calls fn for every item of a mail store — all messages of
+// a .pst/.ost, or the single message of an Outlook for Mac message file —
+// one at a time. Each item's attachments are extracted to a temporary
+// directory before fn runs and removed when it returns. A partially
+// corrupt store still yields whatever was readable: fn sees the items
+// read so far, and the first error encountered is returned at the end for
+// the caller to decide whether partial coverage is worth reporting.
+func WalkMailStore(path string, fn func(MailItem)) error {
 	if IsMessageSource(path) {
-		return readMessageSource(path)
+		return walkMessageSource(path, fn)
 	}
-	return readPSTStore(path)
+	return walkPSTStore(path, fn)
+}
+
+// ReadMailStore collects every item of a mail store. Attachments are not
+// included: their temporary files are gone by the time it returns. Use
+// WalkMailStore to scan them.
+func ReadMailStore(path string) ([]MailItem, error) {
+	var items []MailItem
+	err := WalkMailStore(path, func(it MailItem) {
+		it.Attachments = nil
+		items = append(items, it)
+	})
+	return items, err
+}
+
+// deliver hands an item to fn and removes its attachment directory
+// afterwards, whatever fn does.
+func deliver(fn func(MailItem), item MailItem, dir string) {
+	defer func() {
+		if dir != "" {
+			os.RemoveAll(dir)
+		}
+	}()
+	fn(item)
 }
