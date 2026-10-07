@@ -154,6 +154,17 @@ and the console — so a blocked mailbox is never mistaken for a clean one.
 On Windows, a mail scan while Outlook is open reports the locked `.ost` the
 same way: close Outlook and run it again.
 
+**Full Disk Access does not survive updates until releases are signed with
+a Developer ID.** macOS grants the permission to an app's code-signing
+identity; the ad-hoc signature the unsigned builds carry is a hash of the
+exact binary, so every new version looks like a new app and the old grant
+stops applying even though PrivacyLens still shows as enabled in the list.
+The fix is to remove PrivacyLens from the Full Disk Access list and add it
+again (the in-app guidance says so), then quit and reopen it from
+Applications. A Developer ID signature identifies the app by team and
+bundle ID, which is stable across versions, and ends this — one more reason
+to sign releases (`scripts/sign-macos.sh`).
+
 **Findings always reach the Insights log.** Every scan — flagless, with
 `-json`/`-csv`/`-html`, manifest-driven, or from the GUI — appends NDJSON
 events to the machine-wide findings log the SIEM agent tails

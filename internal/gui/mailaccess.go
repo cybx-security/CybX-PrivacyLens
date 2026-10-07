@@ -35,6 +35,10 @@ type mailAccess struct {
 	// command's file access to the terminal).
 	GrantTo string `json:"grant_to,omitempty"`
 	AppPath string `json:"app_path,omitempty"` // the .app bundle to add, when GrantTo is PrivacyLens
+	// StrayCopy is set when this window runs from a bundle other than the
+	// installed one: Full Disk Access is granted per bundle, so the grant
+	// must go to the installed copy and that copy must be the one opened.
+	StrayCopy string `json:"stray_copy,omitempty"`
 }
 
 // outlookLocations and openDiskAccessSettings are indirections so tests
@@ -67,6 +71,9 @@ func checkMailAccess() mailAccess {
 		if runtime.GOOS == "darwin" && errors.Is(err, fs.ErrPermission) {
 			ma.NeedsFullDiskAccess = true
 			ma.GrantTo, ma.AppPath = grantTarget()
+			if running, installed := strayCopy(); running != "" {
+				ma.StrayCopy, ma.AppPath = running, installed
+			}
 			break
 		}
 	}

@@ -446,12 +446,17 @@
   }
   function fdaSteps(ma) {
     var who = esc(ma.grant_to || 'PrivacyLens');
-    return '<ol>' +
+    var stray = ma.stray_copy
+      ? '<p style="margin:8px 0 0;color:var(--high)"><strong>This window is running an old copy</strong> at ' + esc(ma.stray_copy) +
+        '. macOS grants access to one copy of an app at a time, so grant it to the installed one in Applications, then quit this copy, delete it, and open PrivacyLens from Applications.</p>'
+      : '';
+    return stray + '<ol>' +
       '<li>Click <strong>Open Full Disk Access settings</strong> below.</li>' +
       '<li>Turn on <strong>' + who + '</strong> in the list. If it is not listed, click <strong>+</strong>' +
         (ma.app_path ? ', pick <strong>PrivacyLens</strong> in Applications' : ', pick <strong>' + who + '</strong>') +
         ', and turn it on' + (ma.app_path ? ' (or drag it from the Finder window)' : '') + '.</li>' +
-      '<li>Quit PrivacyLens (top right), open it again, and run the mail scan.</li>' +
+      '<li><strong>Already listed and on, but still blocked?</strong> That happens after PrivacyLens is updated: macOS treats the new version as a new app. Select it in the list, remove it with <strong>−</strong>, then add it again with <strong>+</strong>.</li>' +
+      '<li>Quit PrivacyLens (top right), open it again from Applications, and run the mail scan.</li>' +
       '</ol>';
   }
   function showMailAccess(ma) {
