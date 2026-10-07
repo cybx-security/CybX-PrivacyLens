@@ -66,7 +66,14 @@ jobs:
           if (Test-Path "$env:ProgramFiles\PrivacyLens") { throw 'program folder not removed' }
           if (Test-Path "$env:ProgramData\PrivacyLens") { throw 'data folder not purged' }
       # The same again through the setup wizard, silently - what a customer
-      # (or an RMM) actually runs.
+      # (or an RMM) actually runs. The runner image does not ship NSIS.
+      - name: Install NSIS (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install nsis -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw "choco install nsis failed with exit code $LASTEXITCODE" }
+          Add-Content -Path $env:GITHUB_PATH -Value "${env:ProgramFiles(x86)}\NSIS"
       - name: Setup wizard - silent install and uninstall (Windows)
         if: runner.os == 'Windows'
         shell: pwsh

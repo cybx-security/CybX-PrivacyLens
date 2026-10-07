@@ -89,7 +89,9 @@ func TestBuiltinSkipDirs(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, f := range findings {
-		if strings.Contains(f.Path, "AppData") {
+		// Relative to the root: on Windows the temp root itself sits under
+		// the user's AppData, so the absolute path always contains it.
+		if rel, _ := filepath.Rel(root, f.Path); strings.HasPrefix(rel, "AppData") {
 			t.Errorf("AppData should be skipped by default: %s", f.Path)
 		}
 	}

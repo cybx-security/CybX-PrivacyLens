@@ -2,6 +2,7 @@ package gui
 
 import (
 	"encoding/json"
+	"html"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -149,7 +150,13 @@ func TestScanLoudFallbackWhenSystemLogUnwritable(t *testing.T) {
 
 // The pre-filled scan path is user data and must be HTML-escaped.
 func TestIndexEscapesDefaultPath(t *testing.T) {
-	home := filepath.Join(t.TempDir(), "R&D <x>")
+	// < and > are illegal in Windows file names; & is enough to prove the
+	// escaping there.
+	name := "R&D <x>"
+	if runtime.GOOS == "windows" {
+		name = "R&D x"
+	}
+	home := filepath.Join(t.TempDir(), name)
 	if err := os.MkdirAll(home, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +166,7 @@ func TestIndexEscapesDefaultPath(t *testing.T) {
 	rr := httptest.NewRecorder()
 	s.handleIndex(rr, httptest.NewRequest(http.MethodGet, "/", nil))
 	page := rr.Body.String()
-	if strings.Contains(page, "R&D <x>") || !strings.Contains(page, "R&amp;D &lt;x&gt;") {
+	if strings.Contains(page, name) || !strings.Contains(page, html.EscapeString(name)) {
 		t.Error("default path was not HTML-escaped in the page")
 	}
 	if strings.Contains(page, "__VERSION__") || strings.Count(page, "version test") == 0 || !strings.Contains(page, "<title>PrivacyLens vtest</title>") {
