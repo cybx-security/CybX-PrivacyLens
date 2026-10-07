@@ -119,6 +119,22 @@ build_app amd64
 if [ "$SIGN" = "1" ]; then
   [ -n "${SIGN_IDENTITY:-}" ] && ./scripts/sign-macos.sh programs
   ./scripts/sign-windows.sh dist/privacylens-windows-*.exe dist/privacylens-gui-windows-*.exe
+elif [ "$(uname)" = "Darwin" ]; then
+  # No Developer ID: seal the Mac programs with an ad-hoc signature. The Go
+  # linker already ad-hoc signs the arm64 executables, but not the Intel
+  # ones and not the .app bundle as a whole, and a downloaded bundle whose
+  # seal does not verify is what macOS reports as "damaged and can't be
+  # opened". Sealed, it gets the ordinary "unidentified developer" dialog,
+  # which System Settings > Privacy & Security > Open Anyway clears. Only
+  # notarization (SIGN=1 with a Developer ID) removes the dialog entirely.
+  for app in dist/PrivacyLens-*.app; do
+    codesign --force --deep --sign - --identifier com.cybx.privacylens.gui "$app"
+    codesign --verify --deep --strict "$app"
+  done
+  for bin in dist/privacylens-darwin-*; do
+    codesign --force --sign - --identifier com.cybx.privacylens "$bin"
+  done
+  echo "ad-hoc signed the macOS programs (unsigned release: expect the unidentified-developer dialog on download)"
 fi
 
 PKG=dist/packages

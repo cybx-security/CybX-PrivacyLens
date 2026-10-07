@@ -33,11 +33,13 @@ jobs:
       - if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
+          # Only the customer-facing packages: the bare programs under dist/
+          # download as extensionless "documents" that cannot be opened
+          # from Finder; they are inside the zips and tarballs anyway.
           files: |
             dist/SHA256SUMS
             dist/BUILD-INFO.txt
             dist/sbom.cdx.json
-            dist/privacylens-*
             dist/packages/*
           generate_release_notes: true
           draft: true

@@ -14,9 +14,23 @@ INSTALL  (about 2 minutes)
 3. The window shows each step as it happens. When it says
    "PrivacyLens is installed", press any key to close it.
 
-If macOS says the installer "cannot be opened" or "could not be verified":
-open System Settings > Privacy & Security, scroll down, click "Open Anyway"
-next to the PrivacyLens message, and double-click the installer again.
+If macOS says the installer "cannot be opened", "could not be verified",
+or that it is "from an unidentified developer": open System Settings >
+Privacy & Security, scroll down, click "Open Anyway" next to the PrivacyLens
+message, and double-click the installer again. This happens once per
+download; PrivacyLens is not yet notarized with Apple.
+
+Always start with "Install PrivacyLens" (or the PrivacyLens-<version>.pkg
+installer) rather than opening PrivacyLens.app straight from this folder:
+the installer removes macOS's download quarantine from the copy it puts in
+Applications, so the installed app opens normally afterwards.
+
+If macOS says PrivacyLens "is damaged and can't be opened", the download
+was blocked the same way. Open Terminal, type the following, drag this
+folder onto the window to fill in its path, and press Return, then run
+"Install PrivacyLens" again:
+
+    xattr -dr com.apple.quarantine 
 
 
 USE IT
