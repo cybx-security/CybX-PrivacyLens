@@ -13,6 +13,14 @@ INSTALL  (about 2 minutes)
    an administrator). Nothing shows as you type - that is normal.
 3. The window shows each step as it happens. When it says
    "PrivacyLens is installed", press any key to close it.
+4. Delete this downloaded folder. PrivacyLens now lives in Applications;
+   a copy left here would show up as a second PrivacyLens in Launchpad
+   and Spotlight.
+
+The simplest way to install or update is the PrivacyLens-<version>.pkg
+installer from the download page: it puts everything in place and leaves
+nothing behind. Installed copies also update themselves: click "Check for
+updates" at the top right of the PrivacyLens window.
 
 If macOS says the installer "cannot be opened", "could not be verified",
 or that it is "from an unidentified developer": open System Settings >

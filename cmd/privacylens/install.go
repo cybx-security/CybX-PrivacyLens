@@ -279,6 +279,11 @@ func install(p installPaths, opts installOptions) int {
 		} else {
 			guiInstalled = true
 			okf("%s", p.guiPath)
+			if runtime.GOOS == "darwin" && !strings.HasPrefix(src, "/Applications/") {
+				// Every .app on disk shows up in Launchpad and Spotlight,
+				// so a copy left in Downloads looks like a second install.
+				notef("the downloaded copy in %s is no longer needed; delete that folder so only the installed app appears in Launchpad", filepath.Dir(src))
+			}
 		}
 	}
 	if !guiInstalled {
