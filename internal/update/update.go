@@ -35,8 +35,12 @@ func init() {
 	}
 }
 
-// SumsFile is the checksum list every release must carry.
+// SumsFile is the checksum list every release must carry. The release
+// workflow (.github/workflows/release.yml) names it SHA256SUMS and
+// scripts/release.sh SHA256SUMS.txt; both are accepted.
 const SumsFile = "SHA256SUMS.txt"
+
+func isSumsFile(name string) bool { return name == SumsFile || name == "SHA256SUMS" }
 
 // Release is the newest published release and the installer in it for
 // this platform.
@@ -106,7 +110,7 @@ func Check(ctx context.Context, repo, current string) (rel *Release, newer bool,
 		switch {
 		case a.Name == want:
 			rel.Asset = Asset{a.Name, a.URL, a.Size}
-		case a.Name == SumsFile:
+		case isSumsFile(a.Name):
 			rel.SumsURL = a.URL
 		}
 	}

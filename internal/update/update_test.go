@@ -120,6 +120,35 @@ func TestDownloadRejectsBadOrMissingChecksum(t *testing.T) {
 	}
 }
 
+// The CI release workflow publishes "SHA256SUMS" with dist/-relative paths;
+// that must verify too.
+func TestDownloadAcceptsWorkflowChecksumFile(t *testing.T) {
+	body := "fake installer bytes"
+	name := AssetName(runtime.GOOS, runtime.GOARCH, "0.9.11")
+	var srv *httptest.Server
+	mux := http.NewServeMux()
+	mux.HandleFunc("/repos/acme/pl/releases/latest", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, `{"tag_name":"v0.9.11","assets":[{"name":%q,"size":%d,"browser_download_url":%q},{"name":"SHA256SUMS","size":1,"browser_download_url":%q}]}`,
+			name, len(body), srv.URL+"/dl/a", srv.URL+"/dl/sums")
+	})
+	mux.HandleFunc("/dl/a", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, body) })
+	mux.HandleFunc("/dl/sums", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "%s  dist/packages/%s\n%s  dist/BUILD-INFO.txt\n", sumOf(body), name, sumOf("x"))
+	})
+	srv = httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	saved := APIBase
+	APIBase = srv.URL
+	t.Cleanup(func() { APIBase = saved })
+	rel, _, err := Check(context.Background(), "acme/pl", "0.9.10")
+	if err != nil || rel.SumsURL == "" {
+		t.Fatalf("rel=%+v err=%v", rel, err)
+	}
+	if _, err := Download(context.Background(), rel, t.TempDir(), nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCheckNoReleases(t *testing.T) {
 	srv := httptest.NewServer(http.NotFoundHandler())
 	t.Cleanup(srv.Close)

@@ -9,5 +9,5 @@ const (
 	// versions (owner/name). It must be public: customer machines fetch
 	// the latest release and its installers anonymously. A private source
 	// repo can publish to a separate public releases-only repo.
-	UpdateRepo = "rdataback/privacylens"
+	UpdateRepo = "cybx-security/privacylens"
 )
