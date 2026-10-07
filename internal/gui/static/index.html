@@ -846,12 +846,14 @@
           .map(function (c) { return '<span class="chip">' + esc(c) + ' ×' + counts[c] + '</span>'; }).join('');
         var rows = g.findings.map(function (f) {
           var loc = f.folder || f.subject
-            ? esc(f.folder || '') + ' / ' + esc(f.subject || '') + ' · msg ' + f.line
+            ? '<strong>' + esc(f.subject || '(no subject)') + '</strong>' +
+              '<div style="color:var(--muted);font-size:11.5px;margin-top:2px">' +
+              [f.date, f.from, f.folder, 'msg ' + f.line].filter(Boolean).map(esc).join(' · ') + '</div>'
             : (f.page ? 'page ' + f.page + ', line ' + f.line : 'line ' + f.line);
           return '<tr data-cat="' + esc(f.category) + '" data-conf="' + esc(f.confidence) + '">' +
             '<td style="white-space:nowrap;font-weight:600;font-size:13px">' + esc(f.category) + '</td>' +
             '<td><span class="badge ' + esc(f.confidence) + '">' + esc(f.confidence) + '</span></td>' +
-            '<td style="white-space:nowrap;font-size:13px">' + loc + '</td>' +
+            '<td style="font-size:13px;min-width:180px">' + loc + '</td>' +
             '<td class="mono" style="white-space:nowrap">' + esc(f.match) + '</td>' +
             '<td class="mono" style="color:#37474f">' + esc(f.context) + '</td></tr>';
         }).join('');

@@ -107,10 +107,24 @@ func MaskFindings(fs []scanner.Finding) []scanner.Finding {
 		if !plainCategory(f.Category) {
 			f.Match = Mask(f.Match)
 		}
+		f.From = maskFrom(f.From)
 		f.Redact = nil
 		out[i] = f
 	}
 	return out
+}
+
+// maskFrom masks the address in a mail sender ("Jane Doe <jane@x.com>" →
+// "Jane Doe <j***@x.com>") and keeps the display name, which is what
+// someone scanning a list of findings recognizes.
+func maskFrom(s string) string {
+	if lt := strings.LastIndexByte(s, '<'); lt >= 0 && strings.HasSuffix(s, ">") {
+		return s[:lt+1] + Mask(s[lt+1:len(s)-1]) + ">"
+	}
+	if strings.ContainsRune(s, '@') {
+		return Mask(s)
+	}
+	return s
 }
 
 // Mask hides a PII value while leaving enough to verify against the source:
@@ -154,13 +168,14 @@ func WriteJSON(w io.Writer, r *Report) error {
 func WriteCSV(w io.Writer, r *Report) error {
 	out := r.ForOutput()
 	cw := csv.NewWriter(w)
-	if err := cw.Write([]string{"path", "file_name", "category", "confidence", "line", "match", "context", "folder", "subject"}); err != nil {
+	if err := cw.Write([]string{"path", "file_name", "category", "confidence", "line", "match", "context", "folder", "subject", "date", "from"}); err != nil {
 		return err
 	}
 	for _, f := range out.Findings {
 		if err := cw.Write([]string{
 			csvSafe(f.Path), csvSafe(f.FileName), f.Category, f.Confidence,
 			fmt.Sprintf("%d", f.Line), csvSafe(f.Match), csvSafe(f.Context), csvSafe(f.Folder), csvSafe(f.Subject),
+			f.Date, csvSafe(f.From),
 		}); err != nil {
 			return err
 		}
@@ -296,6 +311,9 @@ func PrintConsole(w io.Writer, r *Report, verbose bool) {
 			}
 			if f.Folder != "" || f.Subject != "" {
 				loc = fmt.Sprintf("%s / %q (message %d)", f.Folder, f.Subject, f.Line)
+				if f.Date != "" || f.From != "" {
+					loc += fmt.Sprintf(" [%s]", strings.TrimSpace(f.Date+" "+f.From))
+				}
 			}
 			fmt.Fprintf(w, "  [%s] %s  %s: %q\n",
 				strings.ToUpper(f.Confidence), f.Category, loc, f.Context)

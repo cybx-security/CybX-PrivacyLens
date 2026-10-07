@@ -33,31 +33,32 @@ func readMessageSource(path string) ([]MailItem, error) {
 	if err != nil {
 		return nil, err
 	}
-	subject, text, perr := mimeText(raw)
-	if text == "" {
+	msg, perr := mimeText(raw)
+	if msg.Text == "" {
 		return nil, perr
 	}
-	return []MailItem{{
-		Folder: outlookMacFolder(path), Subject: subject, Index: 1, Text: text,
-	}}, perr
+	msg.Folder = outlookMacFolder(path)
+	msg.Index = 1
+	return []MailItem{msg}, perr
 }
 
-// mimeText flattens a MIME message to subject plus scannable text. The
-// error reports a parse problem the caller may want to note; text is still
+// mimeText flattens a MIME message to its subject, sender, date, and
+// scannable text (Folder and Index are left for the caller). The error
+// reports a parse problem the caller may want to note; text is still
 // returned alongside it whenever anything was readable.
-func mimeText(raw []byte) (subject, text string, err error) {
+func mimeText(raw []byte) (item MailItem, err error) {
 	// go-message parses attacker-controllable input; a crash must degrade
 	// to the raw-text fallback, never take down the scan.
 	defer func() {
 		if r := recover(); r != nil {
-			subject, text = rawMessageText(raw)
+			item.Subject, item.Text = rawMessageText(raw)
 			err = fmt.Errorf("mail parser crashed: %v", r)
 		}
 	}()
 	mr, rerr := mail.CreateReader(bytes.NewReader(raw))
 	if rerr != nil && !message.IsUnknownCharset(rerr) && !message.IsUnknownEncoding(rerr) || mr == nil {
-		subject, text = rawMessageText(raw)
-		return subject, text, fmt.Errorf("not readable as a mail message (scanned as raw text): %w", rerr)
+		item.Subject, item.Text = rawMessageText(raw)
+		return item, fmt.Errorf("not readable as a mail message (scanned as raw text): %w", rerr)
 	}
 	var b strings.Builder
 	line := func(label, v string) {
@@ -68,8 +69,12 @@ func mimeText(raw []byte) (subject, text string, err error) {
 		}
 	}
 	h := mr.Header
-	subject, _ = h.Subject()
-	line("Subject: ", subject)
+	item.Subject, _ = h.Subject()
+	item.From = headerText(h, "From")
+	if d, derr := h.Date(); derr == nil {
+		item.Date = d
+	}
+	line("Subject: ", item.Subject)
 	for _, name := range []string{"From", "To", "Cc", "Bcc", "Reply-To"} {
 		line(name+": ", headerText(h, name))
 	}
@@ -111,18 +116,18 @@ func mimeText(raw []byte) (subject, text string, err error) {
 			io.Copy(io.Discard, p.Body)
 		}
 	}
-	text = strings.TrimSpace(b.String())
+	item.Text = strings.TrimSpace(b.String())
 	if !gotBody {
 		// Headers parsed but no body came out — a broken multipart
 		// boundary, usually. Scan the whole file as text instead so the
 		// body's PII is not lost behind a header-only item.
 		rawSubject, rawText := rawMessageText(raw)
-		if subject == "" {
-			subject = rawSubject
+		if item.Subject == "" {
+			item.Subject = rawSubject
 		}
-		text = rawText
+		item.Text = rawText
 	}
-	return subject, text, firstErr
+	return item, firstErr
 }
 
 // headerText returns an address header as readable text: the parsed

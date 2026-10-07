@@ -233,6 +233,12 @@ if [ "$(uname)" = "Darwin" ] && command -v pkgbuild >/dev/null && [ -x /usr/bin/
     # the per-architecture signatures.
     codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$root/usr/local/bin/privacylens"
     codesign --force --deep --options runtime --timestamp --sign "$SIGN_IDENTITY" "$root/Applications/PrivacyLens.app"
+  else
+    # Same ad-hoc seal as the per-architecture programs above; without it
+    # the installed bundle fails verification ("invalid resource directory").
+    codesign --force --sign - --identifier com.cybx.privacylens "$root/usr/local/bin/privacylens"
+    codesign --force --deep --sign - --identifier com.cybx.privacylens.gui "$root/Applications/PrivacyLens.app"
+    codesign --verify --deep --strict "$root/Applications/PrivacyLens.app"
   fi
 
   # Installer would otherwise "relocate" the app onto any other copy of the

@@ -10,6 +10,7 @@ import (
 const sampleMIME = "From: HR <hr@example.com>\r\n" +
 	"To: Jane Doe <jane@example.com>\r\n" +
 	"Subject: =?utf-8?q?Onboarding_=E2=80=94_forms?=\r\n" +
+	"Date: Tue, 07 Oct 2026 09:15:00 -0400\r\n" +
 	"MIME-Version: 1.0\r\n" +
 	"Content-Type: multipart/mixed; boundary=\"b1\"\r\n" +
 	"\r\n" +
@@ -56,6 +57,9 @@ func TestReadMessageSource(t *testing.T) {
 	it := items[0]
 	if it.Folder != "Outlook for Mac — Main Profile" || it.Subject != "Onboarding — forms" || it.Index != 1 {
 		t.Errorf("item = %+v", it)
+	}
+	if it.From != "\"HR\" <hr@example.com>" || it.Date.IsZero() || it.Date.UTC().Format("2006-01-02 15:04") != "2026-10-07 13:15" {
+		t.Errorf("from/date = %q / %v", it.From, it.Date)
 	}
 	for _, want := range []string{"Subject: Onboarding — forms", "hr@example.com", "jane@example.com", "SSN is 219-09-9999 —", "4111 1111 1111 1111", "Attachment: w4.pdf"} {
 		if !strings.Contains(it.Text, want) {

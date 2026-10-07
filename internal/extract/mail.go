@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	charsets "github.com/emersion/go-message/charset"
 	pst "github.com/mooijtech/go-pst/v6/pkg"
@@ -68,12 +69,12 @@ func readPSTStore(path string) (items []MailItem, err error) {
 		index := 0
 		for it.Next() {
 			index++
-			subject, text := itemText(it.Value())
+			subject, from, date, text := itemText(it.Value())
 			if text == "" {
 				continue
 			}
 			items = append(items, MailItem{
-				Folder: folder.Name, Subject: subject, Index: index, Text: text,
+				Folder: folder.Name, Subject: subject, From: from, Date: date, Index: index, Text: text,
 			})
 		}
 		if err := it.Err(); err != nil {
@@ -85,11 +86,11 @@ func readPSTStore(path string) (items []MailItem, err error) {
 	return items, firstErr
 }
 
-// itemText flattens one store item to its subject plus scannable text.
-// Contacts, appointments, and tasks matter as much as mail here — contact
-// cards are dense PII — so unhandled property types fall back to their
-// field dump rather than being dropped.
-func itemText(m *pst.Message) (subject, text string) {
+// itemText flattens one store item to its subject, sender, date, and
+// scannable text. Contacts, appointments, and tasks matter as much as mail
+// here — contact cards are dense PII — so unhandled property types fall
+// back to their field dump rather than being dropped.
+func itemText(m *pst.Message) (subject, from string, date time.Time, text string) {
 	var b strings.Builder
 	line := func(label, v string) {
 		if v != "" {
@@ -101,8 +102,16 @@ func itemText(m *pst.Message) (subject, text string) {
 	switch p := m.Properties.(type) {
 	case *properties.Message:
 		subject = p.GetSubject()
+		from = p.GetFrom()
+		// go-pst hands times over as Unix nanoseconds; delivery time for
+		// received mail, submit time for sent.
+		if ns := p.GetMessageDeliveryTime(); ns != 0 {
+			date = time.Unix(0, ns)
+		} else if ns := p.GetClientSubmitTime(); ns != 0 {
+			date = time.Unix(0, ns)
+		}
 		line("Subject: ", subject)
-		line("From: ", p.GetFrom())
+		line("From: ", from)
 		line("To: ", p.GetDisplayTo())
 		line("Cc: ", p.GetDisplayCc())
 		line("Bcc: ", p.GetDisplayBcc())
@@ -125,7 +134,7 @@ func itemText(m *pst.Message) (subject, text string) {
 	case *properties.AddressBook:
 		b.WriteString(p.String())
 	default:
-		return "", ""
+		return "", "", time.Time{}, ""
 	}
-	return subject, strings.TrimSpace(b.String())
+	return subject, from, date, strings.TrimSpace(b.String())
 }

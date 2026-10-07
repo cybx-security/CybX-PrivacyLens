@@ -170,3 +170,23 @@ func TestWriteCSVNeutralizesFormulas(t *testing.T) {
 		t.Errorf("ordinary match cell = %q, want unchanged", got)
 	}
 }
+
+// The sender of a mail finding is masked like any other address, keeping
+// the display name people recognize.
+func TestMaskFrom(t *testing.T) {
+	cases := map[string]string{
+		"Jane Doe <jane.doe@example.com>": "Jane Doe <j*******@example.com>",
+		"jane.doe@example.com":            "j*******@example.com",
+		"Payroll Team":                    "Payroll Team",
+		"":                                "",
+	}
+	for in, want := range cases {
+		if got := maskFrom(in); got != want {
+			t.Errorf("maskFrom(%q) = %q, want %q", in, got, want)
+		}
+	}
+	f := MaskFindings([]scanner.Finding{{Path: "a.pst", Category: "SSN", Match: "219-09-9999", From: "Jane <jane@example.com>"}})[0]
+	if f.From != "Jane <j***@example.com>" {
+		t.Errorf("masked finding From = %q", f.From)
+	}
+}

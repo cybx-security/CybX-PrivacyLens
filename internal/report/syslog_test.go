@@ -196,7 +196,7 @@ func TestMailFindingFields(t *testing.T) {
 	rep.Findings = []scanner.Finding{{
 		Path: "C:\\Users\\t\\archive.pst", FileName: "archive.pst",
 		Category: "SSN", Confidence: "high", Line: 7,
-		Folder: "Inbox", Subject: "ssn 219-09-9999 for onboarding",
+		Folder: "Inbox", Subject: "ssn 219-09-9999 for onboarding", Date: "2026-10-07 09:15", From: "HR <hr@example.com>",
 		Match: "219-09-9999", Context: "his ssn 219-09-9999 attached",
 	}}
 
@@ -224,7 +224,8 @@ func TestMailFindingFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(cefLines[0], "cs4Label=mailFolder cs4=Inbox") ||
-		!strings.Contains(cefLines[0], "cs5Label=mailSubject") {
+		!strings.Contains(cefLines[0], "cs5Label=mailSubject") || !strings.Contains(cefLines[0], "cs6Label=mailDate cs6=2026-10-07 09:15") ||
+		!strings.Contains(cefLines[0], "suser=") {
 		t.Errorf("CEF mail fields missing: %q", cefLines[0])
 	}
 }

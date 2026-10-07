@@ -9,6 +9,7 @@ package extract
 import (
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // IsMailStore reports whether path is Outlook mailbox data: a .pst/.ost
@@ -78,8 +79,13 @@ func outlookMacFolder(path string) string {
 type MailItem struct {
 	Folder  string
 	Subject string
-	Index   int    // 1-based position within its folder
-	Text    string // subject, sender, recipients, and body, newline-joined
+	// From and Date identify the message for whoever has to go and find
+	// it: the sender as written in the message, and when it was sent or
+	// received (zero when the store does not say).
+	From  string
+	Date  time.Time
+	Index int    // 1-based position within its folder
+	Text  string // subject, sender, recipients, and body, newline-joined
 }
 
 // ReadMailStore extracts every item from a mail store: all messages of a

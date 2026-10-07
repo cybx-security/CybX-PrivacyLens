@@ -252,6 +252,12 @@ func cefLine(tool, version string, f scanner.Finding) string {
 		fields = append(fields,
 			"cs4Label=mailFolder", "cs4="+cefExt(f.Folder),
 			"cs5Label=mailSubject", "cs5="+cefExt(f.Subject))
+		if f.Date != "" {
+			fields = append(fields, "cs6Label=mailDate", "cs6="+cefExt(f.Date))
+		}
+		if f.From != "" {
+			fields = append(fields, "suser="+cefExt(f.From))
+		}
 	}
 	ext := strings.Join(append(fields, "msg="+cefExt(f.Context)), " ")
 	return fmt.Sprintf("CEF:0|%s|%s|%s|%s|PII detected: %s|%d|%s",

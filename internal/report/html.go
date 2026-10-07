@@ -46,7 +46,7 @@ var htmlTmpl = template.Must(template.New("report").Parse(`<!DOCTYPE html>
   tr:last-child td { border-bottom: none; }
   td.ctx { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; color: #37474f; word-break: break-all; }
   td.match { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; white-space: nowrap; }
-  td.loc { white-space: nowrap; font-size: 13px; }
+  td.loc { font-size: 13px; min-width: 180px; }
   .badge { display: inline-block; padding: 2px 9px; border-radius: 20px; color: #fff; font-size: 11px; font-weight: 600; text-transform: uppercase; }
   .badge.high { background: var(--high); } .badge.medium { background: var(--medium); } .badge.low { background: var(--low); }
   .cat { white-space: nowrap; font-weight: 600; font-size: 13px; }
@@ -129,7 +129,7 @@ var htmlTmpl = template.Must(template.New("report").Parse(`<!DOCTYPE html>
           <tr data-cat="{{.Category}}" data-conf="{{.Confidence}}">
             <td class="cat">{{.Category}}</td>
             <td><span class="badge {{.Confidence}}">{{.Confidence}}</span></td>
-            <td class="loc">{{if or .Folder .Subject}}{{.Folder}} / {{.Subject}} · msg {{.Line}}{{else if .Page}}page {{.Page}}, line {{.Line}}{{else}}line {{.Line}}{{end}}</td>
+            <td class="loc">{{if or .Folder .Subject}}<strong>{{if .Subject}}{{.Subject}}{{else}}(no subject){{end}}</strong><div class="mailloc">{{if .Date}}{{.Date}} · {{end}}{{if .From}}{{.From}} · {{end}}{{.Folder}} · msg {{.Line}}</div>{{else if .Page}}page {{.Page}}, line {{.Line}}{{else}}line {{.Line}}{{end}}</td>
             <td class="match">{{.Match}}</td>
             <td class="ctx">{{.Context}}</td>
           </tr>

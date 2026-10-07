@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	"github.com/rdataback/privacylens/internal/detect"
@@ -115,6 +116,10 @@ type Finding struct {
 	// the message's 1-based position within that folder, not a text line.
 	Folder  string `json:"folder,omitempty"`
 	Subject string `json:"subject,omitempty"`
+	// From and Date (as "2006-01-02 15:04") say who sent the message and
+	// when, so the person cleaning up can find it in Outlook.
+	From string `json:"from,omitempty"`
+	Date string `json:"date,omitempty"`
 	// Redact holds secret values that share this finding's line but are not
 	// themselves the match — e.g. the password column of a credential-export
 	// CSV sitting right next to a matched email. Masked output hides them
@@ -843,12 +848,23 @@ func scanMailStore(path string, opts Options) fileResult {
 				Line:       item.Index,
 				Folder:     item.Folder,
 				Subject:    item.Subject,
+				From:       item.From,
+				Date:       mailDate(item.Date),
 				Match:      m.Value,
 				Context:    contextSnippet(item.Text, m),
 			})
 		}
 	}
 	return fileResult{path: path, findings: findings, warn: rerr}
+}
+
+// mailDate formats a message time for reports; empty when the store had
+// none.
+func mailDate(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Format("2006-01-02 15:04")
 }
 
 // locator converts byte offsets of successive (ascending) matches into line
