@@ -4,7 +4,7 @@ package buildinfo
 
 const (
 	Tool    = "PrivacyLens"
-	Version = "0.9.11"
+	Version = "0.9.12"
 	// UpdateRepo is the GitHub repository whose Releases carry new
 	// versions (owner/name). It must be public: customer machines fetch
 	// the latest release and its installers anonymously. A private source
