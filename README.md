@@ -159,7 +159,11 @@ same way: close Outlook and run it again.
 events to the machine-wide findings log the SIEM agent tails
 (`C:\ProgramData\PrivacyLens\logs\findings.json` on Windows,
 `/var/log/privacylens/findings.json` elsewhere) whenever that directory
-exists; the installer creates it and grants Users write access. There is no
+exists; the installer creates it and lets every account append to it
+(an append-only ACL on Windows and macOS, a world-writable file in a
+root-owned folder on Linux), so scans started from the GUI by an ordinary
+user reach it too; `privacylens status` reports whether the current account
+can. There is no
 "wrong way" to run a scan that silently skips the SIEM. Overrides:
 `-syslog-out`/`-syslog-addr` redirect the events, `-no-findings-log` (or
 `"no_findings_log": true`) turns them off. If the machine-wide log exists

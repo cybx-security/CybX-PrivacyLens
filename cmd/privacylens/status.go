@@ -179,6 +179,24 @@ func status(p installPaths, w io.Writer) int {
 		row(false, "Weekly scan", "not scheduled - run: privacylens install")
 	}
 
+	// Can this account's own scans reach the machine-wide log? Opening for
+	// append (without writing) is the same check the scanner makes.
+	switch f, err := os.OpenFile(p.logPath, os.O_WRONLY|os.O_APPEND, 0); {
+	case err == nil:
+		f.Close()
+		if os.Geteuid() == 0 {
+			info("Insights log", p.logPath+" (writable - checked as administrator; run status as a normal user to check their access)")
+		} else {
+			row(true, "Insights log", "scans run by this account report to "+p.logPath)
+		}
+	case os.IsNotExist(err):
+		row(false, "Insights log", p.logPath+" does not exist - run: privacylens install")
+	case os.IsPermission(err):
+		row(false, "Insights log", "this account cannot write "+p.logPath+" - its scans fall back to a per-user log Insights does not see; re-run the installer (privacylens install) to fix the permissions")
+	default:
+		row(false, "Insights log", fmt.Sprintf("cannot open %s (%v)", p.logPath, err))
+	}
+
 	switch last, err := readLastScan(p.logPath); {
 	case err != nil && os.IsNotExist(err):
 		info("Last scan", "none yet - no findings log at "+p.logPath)

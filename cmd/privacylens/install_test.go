@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -163,6 +164,21 @@ func TestInstallStatusUninstall(t *testing.T) {
 	var after bytes.Buffer
 	if code := status(p, &after); code != exitClean {
 		t.Errorf("status after install should be healthy:\n%s", after.String())
+	}
+	if !strings.Contains(after.String(), "Insights log") {
+		t.Errorf("status should report whether this account can reach the findings log:\n%s", after.String())
+	}
+	if runtime.GOOS != "windows" {
+		// Users must be able to traverse the log folder and append to the
+		// log (what GUI scans by ordinary accounts need).
+		if fi, err := os.Stat(p.logDir); err != nil || fi.Mode().Perm() != 0o755 {
+			t.Errorf("log dir mode = %v, want 0755", fi.Mode().Perm())
+		}
+		if f, err := os.OpenFile(p.logPath, os.O_WRONLY|os.O_APPEND, 0); err != nil {
+			t.Errorf("findings log not appendable after install: %v", err)
+		} else {
+			f.Close()
+		}
 	}
 
 	// Default uninstall removes the program but keeps the records.

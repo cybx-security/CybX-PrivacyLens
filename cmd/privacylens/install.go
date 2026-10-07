@@ -267,6 +267,8 @@ func install(p installPaths, opts installOptions) int {
 	}
 	if runtime.GOOS == "windows" {
 		secureWindowsDataDir(p)
+	} else {
+		openLogToUsers(p)
 	}
 	if err := installBinary(p.binPath); err != nil {
 		return fail("cannot install the program to %s: %v", p.binPath, err)
@@ -449,6 +451,47 @@ func secureWindowsDataDir(p installPaths) {
 	if err := execCmd("icacls", p.logDir, "/grant", "*S-1-5-32-545:(OI)(CI)(AD,RA,REA,WEA,WA,S)"); err != nil {
 		warnf("could not let standard users write to %s (%v); their scans will fall back to per-user logs", p.logDir, err)
 	}
+}
+
+// openLogToUsers lets every account on this computer append to the
+// machine-wide findings log — what the Windows installer does with an ACL.
+// Scans started from the GUI run as an ordinary user; if they cannot reach
+// the log the SIEM agent tails, Insights only ever sees the scheduled scan
+// (the GUI then falls back to a per-user log and warns, but the fleet view
+// is still wrong). Users get append only where the platform can express
+// it, so history cannot be rewritten or deleted.
+func openLogToUsers(p installPaths) {
+	// Explicit, not via MkdirAll's mode: the .pkg postinstall runs under a
+	// restrictive umask and left the folder unreadable to users.
+	if err := os.Chmod(p.logDir, 0o755); err != nil {
+		warnf("could not open %s to users (%v); their scans will fall back to per-user logs", p.logDir, err)
+		return
+	}
+	f, err := os.OpenFile(p.logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		warnf("could not create %s (%v); users' scans will fall back to per-user logs", p.logPath, err)
+		return
+	}
+	f.Close()
+	if runtime.GOOS == "darwin" {
+		// macOS ACLs distinguish append from write: an O_APPEND open needs
+		// only append_data. Remove a previous copy of the entry first so
+		// re-running the installer does not stack duplicates.
+		const entry = "everyone allow read,append"
+		execCmd("chmod", "-a", entry, p.logPath)
+		if err := execCmd("chmod", "+a", entry, p.logPath); err == nil {
+			okf("every user's scans can report to %s (append only)", p.logPath)
+			return
+		}
+	}
+	// Linux (or a macOS ACL failure): world-writable file inside a
+	// root-owned folder — it cannot be removed or replaced, only appended
+	// to in normal use.
+	if err := os.Chmod(p.logPath, 0o666); err != nil {
+		warnf("could not let users write %s (%v); their scans will fall back to per-user logs", p.logPath, err)
+		return
+	}
+	okf("every user's scans can report to %s", p.logPath)
 }
 
 // removeLegacyBinary deletes the pre-0.9.6 Windows binary from ProgramData
