@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"mime"
+	netmail "net/mail"
 	"os"
-	"regexp"
 	"strings"
+	"time"
 
 	"github.com/emersion/go-message"
+	"github.com/emersion/go-message/charset"
 	"github.com/emersion/go-message/mail"
 )
 
@@ -64,6 +67,8 @@ func mimeText(raw []byte, dir string) (item MailItem, err error) {
 	mr, rerr := mail.CreateReader(bytes.NewReader(raw))
 	if rerr != nil && !message.IsUnknownCharset(rerr) && !message.IsUnknownEncoding(rerr) || mr == nil {
 		item.Subject, item.Text = rawMessageText(raw)
+		rh := rawHeaders(raw)
+		item.From, item.Date = rh.get("From"), rh.date()
 		return item, fmt.Errorf("not readable as a mail message (scanned as raw text): %w", rerr)
 	}
 	var b strings.Builder
@@ -79,6 +84,21 @@ func mimeText(raw []byte, dir string) (item MailItem, err error) {
 	item.From = headerText(h, "From")
 	if d, derr := h.Date(); derr == nil {
 		item.Date = d
+	}
+	// Belt and braces: Outlook folds long or encoded subjects onto a
+	// continuation line and uses legacy charsets; if the library came up
+	// empty, read the raw header block ourselves.
+	if item.Subject == "" || item.From == "" || item.Date.IsZero() {
+		rh := rawHeaders(raw)
+		if item.Subject == "" {
+			item.Subject = rh.get("Subject")
+		}
+		if item.From == "" {
+			item.From = rh.get("From")
+		}
+		if item.Date.IsZero() {
+			item.Date = rh.date()
+		}
 	}
 	line("Subject: ", item.Subject)
 	for _, name := range []string{"From", "To", "Cc", "Bcc", "Reply-To"} {
@@ -148,6 +168,75 @@ func mimeText(raw []byte, dir string) (item MailItem, err error) {
 	return item, firstErr
 }
 
+// rawHeader is a tolerant reading of a message's header block: lines up
+// to the first blank line, continuation lines unfolded, names
+// case-insensitive, RFC 2047 encoded words decoded where possible. It is
+// what the subject, sender, and date fall back to when the MIME parser
+// cannot deliver them.
+type rawHeader map[string]string
+
+func rawHeaders(raw []byte) rawHeader {
+	out := rawHeader{}
+	// Headers are 7-bit ASCII by specification; limit how far a headerless
+	// blob is scanned.
+	if len(raw) > 256<<10 {
+		raw = raw[:256<<10]
+	}
+	lines := strings.Split(strings.ReplaceAll(string(raw), "\r\n", "\n"), "\n")
+	name := ""
+	for _, l := range lines {
+		if l == "" {
+			break
+		}
+		if l[0] == ' ' || l[0] == '\t' {
+			if name != "" {
+				out[name] += " " + strings.TrimSpace(l)
+			}
+			continue
+		}
+		colon := strings.IndexByte(l, ':')
+		if colon <= 0 || strings.ContainsAny(l[:colon], " \t") {
+			// Not a header line: the block has ended (or never started).
+			break
+		}
+		name = strings.ToLower(l[:colon])
+		if _, dup := out[name]; !dup {
+			out[name] = strings.TrimSpace(l[colon+1:])
+		}
+	}
+	return out
+}
+
+// get returns a header decoded for display ("" when absent).
+func (h rawHeader) get(name string) string {
+	v := h[strings.ToLower(name)]
+	if v == "" {
+		return ""
+	}
+	dec := mime.WordDecoder{CharsetReader: charset.Reader}
+	if d, err := dec.DecodeHeader(v); err == nil {
+		return strings.TrimSpace(d)
+	}
+	return v
+}
+
+// date parses the Date header, tolerating the common deviations.
+func (h rawHeader) date() time.Time {
+	v := h["date"]
+	if v == "" {
+		return time.Time{}
+	}
+	if t, err := netmail.ParseDate(v); err == nil {
+		return t
+	}
+	for _, layout := range []string{time.RFC1123Z, time.RFC1123, time.RFC822Z, time.RFC822, "2 Jan 2006 15:04:05 -0700", "Mon, 2 Jan 2006 15:04:05 MST"} {
+		if t, err := time.Parse(layout, v); err == nil {
+			return t
+		}
+	}
+	return time.Time{}
+}
+
 // headerText returns an address header as readable text: the parsed
 // addresses when they parse, else the raw header, so a malformed address
 // line is still scanned.
@@ -163,13 +252,8 @@ func headerText(h mail.Header, name string) string {
 	return strings.Join(parts, ", ")
 }
 
-var subjectLine = regexp.MustCompile(`(?mi)^Subject:[ \t]*(.*)$`)
-
 // rawMessageText is the fallback for a message the MIME parser rejects:
-// the whole file as text, with the subject lifted by a plain header match.
+// the whole file as text, with the subject read from the raw header block.
 func rawMessageText(raw []byte) (subject, text string) {
-	if m := subjectLine.FindSubmatch(raw); m != nil {
-		subject = strings.TrimSpace(string(m[1]))
-	}
-	return subject, strings.TrimSpace(string(raw))
+	return rawHeaders(raw).get("Subject"), strings.TrimSpace(string(raw))
 }

@@ -120,3 +120,36 @@ func TestWalkMessageSourceAttachments(t *testing.T) {
 		t.Error("attachmentScannable has the wrong idea about types")
 	}
 }
+
+// Outlook folds long or encoded subjects onto a continuation line. Both
+// the MIME path and the raw fallback must still find them, with sender and
+// date.
+func TestFoldedEncodedSubject(t *testing.T) {
+	folded := "From: Payroll <payroll@example.com>\r\n" +
+		"Subject:\r\n =?utf-8?Q?Q3_payroll_=E2=80=94_SSN_list?=\r\n" +
+		"Date: Tue, 07 Oct 2026 09:15:00 -0400\r\n"
+	// Rejected by the parser: broken Content-Type parameter quoting.
+	broken := folded + "Content-Type: multipart/mixed; boundary=\"zz\r\n\r\nssn 219-09-9999\r\n"
+	// Accepted by the parser.
+	fine := folded + "Content-Type: text/plain\r\n\r\nssn 219-09-9999\r\n"
+	for name, raw := range map[string]string{"broken": broken, "fine": fine} {
+		path := filepath.Join(t.TempDir(), name+".olk15MsgSource")
+		if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		items, _ := ReadMailStore(path)
+		if len(items) != 1 {
+			t.Fatalf("%s: items = %+v", name, items)
+		}
+		it := items[0]
+		if it.Subject != "Q3 payroll — SSN list" {
+			t.Errorf("%s: subject = %q", name, it.Subject)
+		}
+		if !strings.Contains(it.From, "payroll@example.com") || it.Date.IsZero() {
+			t.Errorf("%s: from/date = %q / %v", name, it.From, it.Date)
+		}
+		if !strings.Contains(it.Text, "219-09-9999") {
+			t.Errorf("%s: body lost: %q", name, it.Text)
+		}
+	}
+}
