@@ -847,7 +847,9 @@ func scanMailStore(path string, opts Options) fileResult {
 	}
 	res := fileResult{path: path}
 	var findings []Finding
+	items := 0
 	werr := walk(path, func(item extract.MailItem) {
+		items++
 		findings = append(findings, mailFindings(path, item, "", item.Text, opts)...)
 		for _, att := range item.Attachments {
 			where := fmt.Sprintf("%s › %s › %s", path, item.Subject, att.Name)
@@ -869,7 +871,9 @@ func scanMailStore(path string, opts Options) fileResult {
 			findings = append(findings, mailFindings(path, item, att.Name, text, opts)...)
 		}
 	})
-	if len(findings) == 0 && res.attachments == 0 && werr != nil {
+	// Nothing readable at all is an error; anything read is a scanned
+	// file, with the problem noted as a partial read.
+	if items == 0 && werr != nil {
 		return fileResult{path: path, err: werr}
 	}
 	res.findings, res.warn = findings, werr

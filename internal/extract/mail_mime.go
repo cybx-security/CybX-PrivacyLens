@@ -171,17 +171,52 @@ func mimeText(raw []byte, dir string) (item MailItem, err error) {
 }
 
 // headerStart matches the start of a header line: a field name and colon.
-var headerStart = regexp.MustCompile(`[A-Za-z][A-Za-z0-9-]{0,60}:[ \t]`)
+var (
+	headerStart = regexp.MustCompile(`[A-Za-z][A-Za-z0-9-]{0,60}:[ \t]`)
+	headerName  = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]{0,60}:`)
+	// knownHeaders are names a message's header block plausibly starts
+	// with; one of these on the first line is proof enough on its own.
+	knownHeaders = map[string]bool{
+		"received": true, "return-path": true, "from": true, "to": true, "subject": true,
+		"date": true, "content-type": true, "mime-version": true, "message-id": true,
+		"delivered-to": true, "authentication-results": true, "dkim-signature": true,
+		"arc-seal": true, "arc-message-signature": true, "arc-authentication-results": true,
+		"x-received": true, "x-ms-exchange-organization-authas": true, "x-originating-ip": true,
+	}
+	// olkTag sits at the end of the preamble Outlook for Mac writes in
+	// front of the raw message in its .olk15MsgSource files: 16 fixed
+	// bytes, a 16-byte identifier, "crSM" (MSrc, little-endian), a 4-byte
+	// field, then the message text.
+	olkTag = []byte("crSM")
+)
 
-// stripBinaryPrefix drops the binary preamble Outlook for Mac writes in
-// front of the raw message in its .olk15MsgSource files (a short block
-// carrying a "crSM"/MSrc tag) so the MIME parser starts at the first
-// real header line. A file that already starts with a header is returned
-// untouched; one with no recognizable header block is returned as is and
-// will be scanned as raw text.
+// stripBinaryPrefix drops the binary preamble of an Outlook for Mac
+// message file so the MIME parser starts at the first real header line.
+// A file that already starts with a header is returned untouched; one
+// with no recognizable header block is returned as is and will be scanned
+// as raw text.
 func stripBinaryPrefix(raw []byte) []byte {
-	if headerStart.Match(raw) && headerStart.FindIndex(raw)[0] == 0 {
+	if headerName.Match(raw) {
 		return raw
+	}
+	head := raw
+	if len(head) > 512 {
+		head = head[:512]
+	}
+	if i := bytes.Index(head, olkTag); i >= 0 {
+		// The text starts exactly 4 bytes after the tag; that field can end
+		// in letters, so the exact offset is tried before any scan nearby.
+		start := i + len(olkTag) + 4
+		if start < len(raw) {
+			if m := headerName.Find(raw[start:]); m != nil && (knownHeaders[strings.ToLower(string(m[:len(m)-1]))] || !isNameByte(raw[start-1])) {
+				return raw[start:]
+			}
+		}
+		for j := i + len(olkTag); j < len(raw) && j <= start+16; j++ {
+			if headerName.Match(raw[j:]) && !isNameByte(raw[j-1]) {
+				return raw[j:]
+			}
+		}
 	}
 	window := raw
 	if len(window) > 64<<10 {
@@ -191,10 +226,8 @@ func stripBinaryPrefix(raw []byte) []byte {
 		i := loc[0]
 		// The name must begin a line (or the file), not be the tail of
 		// some binary that happens to contain letters.
-		if i > 0 {
-			if c := raw[i-1]; c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c == '-' {
-				continue
-			}
+		if i > 0 && isNameByte(raw[i-1]) {
+			continue
 		}
 		if looksLikeHeaderBlock(raw[i:]) {
 			return raw[i:]
@@ -203,11 +236,18 @@ func stripBinaryPrefix(raw []byte) []byte {
 	return raw
 }
 
-// looksLikeHeaderBlock reports whether b begins with at least two
-// consecutive header or continuation lines, all printable ASCII — what a
-// real message header block looks like, and what a stretch of binary that
-// happens to contain "ab: " does not.
+func isNameByte(c byte) bool {
+	return c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c == '-'
+}
+
+// looksLikeHeaderBlock reports whether b begins with a well-known header,
+// or with at least two consecutive header or continuation lines, all
+// printable ASCII — what a real message header block looks like, and what
+// a stretch of binary that happens to contain "ab: " does not.
 func looksLikeHeaderBlock(b []byte) bool {
+	if m := headerName.Find(b); m != nil && knownHeaders[strings.ToLower(string(m[:len(m)-1]))] {
+		return true
+	}
 	lines := 0
 	for len(b) > 0 && lines < 3 {
 		nl := bytes.IndexByte(b, '\n')

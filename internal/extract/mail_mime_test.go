@@ -160,10 +160,22 @@ func TestFoldedEncodedSubject(t *testing.T) {
 // or with a line break, and a plain message must pass through untouched.
 func TestStripBinaryPrefix(t *testing.T) {
 	msg := "Received: from mail.example.com\r\nFrom: HR <hr@example.com>\r\nSubject: Forms\r\nContent-Type: text/plain\r\n\r\nssn 219-09-9999\r\n"
+	// The real layout, as recorded from a scan: 16 fixed bytes, a 16-byte
+	// id (which may contain a newline or letters), crSM, 4 bytes, text.
+	fixed := []byte{0xA0, 0x20, 0, 0, 1, 1, 1, 0, 2, 0, 0, 0, 3, 0, 0, 0}
+	real := func(id, after []byte) []byte {
+		b := append([]byte{}, fixed...)
+		b = append(b, id...)
+		b = append(b, 'c', 'r', 'S', 'M')
+		return append(b, after...)
+	}
 	prefixes := map[string][]byte{
-		"midline":   {0x00, 0x00, 0x01, 0x20, 'e', 0xC9, 0x9F, '}', '>', 'K', 0x8F, 0xFE, '.', 'x', 0xE9, 'M', 0x9A, 'c', 'r', 'S', 'M', 0x8E, '>', 0xBF},
-		"linebreak": {0x00, 0x00, 'd', 0xE2, 0xA0, ' ', 'p', 0xD2, 'C', 'c', 'r', 'S', 'M', 0xBF, '\n', 0xBF, ' ', '\n'},
-		"none":      {},
+		"midline":      {0x00, 0x00, 0x01, 0x20, 'e', 0xC9, 0x9F, '}', '>', 'K', 0x8F, 0xFE, '.', 'x', 0xE9, 'M', 0x9A, 'c', 'r', 'S', 'M', 0x8E, '>', 0xBF},
+		"linebreak":    {0x00, 0x00, 'd', 0xE2, 0xA0, ' ', 'p', 0xD2, 'C', 'c', 'r', 'S', 'M', 0xBF, '\n', 0xBF, ' ', '\n'},
+		"real-letters": real([]byte{'d', 0xE2, 0xA0, ' ', 'p', 0xD2, 'C', 0xC2, 0xA9, 'Q', 'e', 0x0E, '&', 0x18, 0xC2, 0xA9}, []byte{0xBF, 0x05, 'w', 'L'}),
+		"real-newline": real([]byte{'d', 0xE2, 0x1D, 0x08, 'E', 'D', 'E', '(', 0xC2, 0xA9, '\n', 0xC2, 0xA9, 'd', '2', 0x00}, []byte{0xBF, 0xBF, 'k', ';'}),
+		"real-ctrl":    real([]byte{'e', 0xC9, 0x9F, 'R', '}', '>', 'K', 0xC2, 0xA9, 0xB6, 0x04, '.', 'x', 0xC2, 'M', 0x19}, []byte{0xBF, '>', 0x7F, 0xBF}),
+		"none":         {},
 	}
 	for name, prefix := range prefixes {
 		raw := append(append([]byte{}, prefix...), msg...)
