@@ -55,6 +55,22 @@ and values are real — treat the whole payload as PII.
 | `ocr` | bool | present and `true` when the text was read via OCR (0.9.0+). OCR misreads characters — weight lower / verify against the source. Absent otherwise |
 | `page` | int | 1-based page number, present only for OCR'd multi-page documents (0.9.0+) |
 
+Mail-scan findings (from a `.pst`/`.ost` store or an Outlook for Mac
+message file) carry these extra fields; all are absent on ordinary file
+findings. **Reporters and dashboards should show subject, date, sender, and
+attachment for these**, since `path` alone (an Outlook store, or an opaque
+message-file name under the Outlook profile) does not tell anyone which
+email to open.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `folder` | string | Outlook folder the message is in (`Inbox`, `Sent Items`, …); for Outlook for Mac, the profile (`Outlook for Mac — Main Profile`), since that store keeps the folder tree in a database (0.9.11+) |
+| `subject` | string | the message's subject, masked like `context` (0.9.11+) |
+| `date` | string | when the message was sent or received, `2006-01-02 15:04` in the message's own time zone; absent when the store had none (0.9.14+) |
+| `from` | string | sender as written in the message; the address is masked like any email, the display name kept (`Jane Doe <j***@example.com>`) (0.9.14+) |
+| `attachment` | string | present when the hit is inside an attachment: its file name; `line` is then the line within the attachment and `file_name` is the attachment's name (0.9.14+) |
+| `line` | int | for a hit in the message body: the message's 1-based position within its folder, not a text line |
+
 ### 2.2 `needs_ocr` — one per document that could NOT be searched
 
 Scan/image-only document with no text layer; contents are unknown — a
@@ -76,7 +92,10 @@ has a broken/missing scan schedule.
 
 `roots` (string array), `duration` (Go duration string, e.g. `4.2s`),
 `findings`, `files_scanned`, `files_skipped`, `files_need_ocr`,
-`files_ocr` (documents read via OCR, 0.9.0+), `files_errored` (ints).
+`files_ocr` (documents read via OCR, 0.9.0+), `files_errored` (ints),
+`attachments_scanned` (mail attachments read during a mail scan, 0.9.14+;
+0 otherwise). `mail_roots` (string array, mail scans only, 0.9.11+) lists
+Outlook data folders the scan searched on its own beyond `roots`.
 Coverage-gap counters, all ints: `files_cloud_skipped` (cloud placeholders
 not downloaded), `files_mail_skipped` (Outlook stores seen outside a mail
 scan), and `files_unreadable_docs` (0.9.6+: documents in formats the scanner

@@ -117,6 +117,7 @@ func summaryLine(format string, r *Report, ts, hostname string) (string, error) 
 		FilesNeedOCR: r.Stats.FilesNeedOCR, FilesOCR: r.Stats.FilesOCR,
 		FilesCloud: r.Stats.FilesCloud, FilesMail: r.Stats.FilesMail,
 		FilesDocs: r.Stats.FilesDocs, FilesErrored: r.Stats.FilesErrored,
+		AttachmentsScanned: r.Stats.AttachmentsScanned, MailRoots: r.Stats.MailRoots,
 	})
 	return string(b), err
 }
@@ -198,6 +199,10 @@ type summaryRecord struct {
 	// .doc/.xls/.ppt, .msg, OpenDocument…) — present but never searched.
 	FilesDocs    int `json:"files_unreadable_docs"`
 	FilesErrored int `json:"files_errored"`
+	// AttachmentsScanned counts mail attachments read during a mail scan;
+	// MailRoots lists Outlook data folders the scan added on its own.
+	AttachmentsScanned int      `json:"attachments_scanned"`
+	MailRoots          []string `json:"mail_roots,omitempty"`
 }
 
 // syslogPRI builds the RFC 3164 <PRI> tag: facility local0, severity mapped
@@ -247,20 +252,16 @@ func cefLine(tool, version string, f scanner.Finding) string {
 		"cs3Label=match",
 		"cs3=" + cefExt(f.Match),
 	}
-	// Mail-store findings: cn1 is the message's position in its folder.
+	// Mail-store findings: cn1 is the message's position in its folder (or
+	// the line within the attachment). Every mail field is always emitted,
+	// empty or not, so the shipped decoder can take them with one regex.
 	if f.Folder != "" || f.Subject != "" {
 		fields = append(fields,
 			"cs4Label=mailFolder", "cs4="+cefExt(f.Folder),
-			"cs5Label=mailSubject", "cs5="+cefExt(f.Subject))
-		if f.Date != "" {
-			fields = append(fields, "cs6Label=mailDate", "cs6="+cefExt(f.Date))
-		}
-		if f.From != "" {
-			fields = append(fields, "suser="+cefExt(f.From))
-		}
-		if f.Attachment != "" {
-			fields = append(fields, "flexString1Label=attachment", "flexString1="+cefExt(f.Attachment))
-		}
+			"cs5Label=mailSubject", "cs5="+cefExt(f.Subject),
+			"cs6Label=mailDate", "cs6="+cefExt(f.Date),
+			"suser="+cefExt(f.From),
+			"flexString1Label=attachment", "flexString1="+cefExt(f.Attachment))
 	}
 	ext := strings.Join(append(fields, "msg="+cefExt(f.Context)), " ")
 	return fmt.Sprintf("CEF:0|%s|%s|%s|%s|PII detected: %s|%d|%s",

@@ -36,6 +36,25 @@
   <plugin_decoder>JSON_Decoder</plugin_decoder>
 </decoder>
 
+<!-- CEF: PII finding in a mailbox (0.9.14+). Same as the file finding
+     below, plus the message's folder, subject, date, sender (suser), and
+     attachment name (flexString1; empty when the hit is in the body). The
+     scanner always emits all five, empty or not, so one regex suffices.
+     Listed before the generic decoder: siblings are tried in order and
+     the generic regex requires msg= right after cs3.
+     CEF:0|CybX|PrivacyLens|0.9.14|ssn|PII detected: SSN|8|filePath=...
+     fname=... cn1Label=lineNumber cn1=3 cs1Label=category cs1=SSN
+     cs2Label=confidence cs2=high cs3Label=match cs3=***-**-9999
+     cs4Label=mailFolder cs4=Inbox cs5Label=mailSubject cs5=Onboarding
+     cs6Label=mailDate cs6=2026-10-07 09:15 suser=HR <h*@x.com>
+     flexString1Label=attachment flexString1=w4.pdf msg=... -->
+<decoder name="privacylens-cef-finding-mail">
+  <parent>privacylens</parent>
+  <prematch>cs4Label=mailFolder</prematch>
+  <regex>^CEF:0\|\.+\|PrivacyLens\|\.+\|(\.+)\|PII detected: \.+\|\d+\|filePath=(\.+) fname=(\.+) cn1Label=lineNumber cn1=(\d+) cs1Label=category cs1=(\.+) cs2Label=confidence cs2=(\w+) cs3Label=match cs3=(\S+) cs4Label=mailFolder cs4=(\.*) cs5Label=mailSubject cs5=(\.*) cs6Label=mailDate cs6=(\.*) suser=(\.*) flexString1Label=attachment flexString1=(\.*) msg=(\.*)$</regex>
+  <order>category_id, path, file_name, line, category, confidence, match, folder, subject, date, from, attachment, context</order>
+</decoder>
+
 <!-- CEF: PII finding.
      CEF:0|CybX|PrivacyLens|0.6.0|ssn|PII detected: SSN|8|filePath=...
      fname=... cn1Label=lineNumber cn1=14 cs1Label=category cs1=SSN

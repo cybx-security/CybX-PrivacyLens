@@ -225,7 +225,7 @@ func TestMailFindingFields(t *testing.T) {
 	}
 	if !strings.Contains(cefLines[0], "cs4Label=mailFolder cs4=Inbox") ||
 		!strings.Contains(cefLines[0], "cs5Label=mailSubject") || !strings.Contains(cefLines[0], "cs6Label=mailDate cs6=2026-10-07 09:15") ||
-		!strings.Contains(cefLines[0], "suser=") {
+		!strings.Contains(cefLines[0], "suser=") || !strings.Contains(cefLines[0], "flexString1Label=attachment flexString1= msg=") {
 		t.Errorf("CEF mail fields missing: %q", cefLines[0])
 	}
 }

@@ -117,6 +117,33 @@
     <group>cmmc,nist_800_171,</group>
   </rule>
 
+  <!-- Mail scans (0.9.14+): findings carry the message's subject, date,
+       sender (masked like any other address), and the attachment name when
+       the hit is inside one. These children keep the parent's level and
+       put that context in the alert text, so the person cleaning up can
+       find the email without opening the report. `subject` is present on
+       every mail finding (JSON: data.subject; CEF: decoded as subject). -->
+  <rule id="100970" level="10">
+    <if_sid>100951,100952</if_sid>
+    <field name="subject">\.+</field>
+    <description>PrivacyLens: PII ($(data.category), $(data.confidence)) in email "$(data.subject)" from $(data.from) on $(data.date) - $(data.path)</description>
+    <group>pci_dss_3.4,gdpr_II_5.1.f,</group>
+  </rule>
+
+  <rule id="100971" level="12">
+    <if_sid>100953,100954,100962</if_sid>
+    <field name="subject">\.+</field>
+    <description>PrivacyLens: $(data.category) found in email "$(data.subject)" from $(data.from) on $(data.date) - $(data.path)</description>
+    <group>pci_dss_3.4,gdpr_II_5.1.f,hipaa_164.312.b,</group>
+  </rule>
+
+  <rule id="100972" level="12">
+    <if_sid>100970,100971</if_sid>
+    <field name="attachment">\.+</field>
+    <description>PrivacyLens: $(data.category) found in attachment $(data.attachment) (line $(data.line)) of email "$(data.subject)" from $(data.from) on $(data.date)</description>
+    <group>pci_dss_3.4,gdpr_II_5.1.f,hipaa_164.312.b,</group>
+  </rule>
+
   <!-- Coverage gap: a scanned/image-only document exists that could NOT be
        searched (no text layer; OCR pending). Its contents are unknown.
        privacylens_event is "needs_ocr" (JSON) or "needs-ocr" (CEF), so
