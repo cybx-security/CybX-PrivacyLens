@@ -7,6 +7,7 @@ import (
 	"mime"
 	netmail "net/mail"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -35,6 +36,7 @@ func walkMessageSource(path string, fn func(MailItem)) error {
 	if err != nil {
 		return err
 	}
+	raw = stripBinaryPrefix(raw)
 	dir, err := attachmentDir()
 	if err != nil {
 		return err
@@ -166,6 +168,74 @@ func mimeText(raw []byte, dir string) (item MailItem, err error) {
 		item.Text = rawText
 	}
 	return item, firstErr
+}
+
+// headerStart matches the start of a header line: a field name and colon.
+var headerStart = regexp.MustCompile(`[A-Za-z][A-Za-z0-9-]{0,60}:[ \t]`)
+
+// stripBinaryPrefix drops the binary preamble Outlook for Mac writes in
+// front of the raw message in its .olk15MsgSource files (a short block
+// carrying a "crSM"/MSrc tag) so the MIME parser starts at the first
+// real header line. A file that already starts with a header is returned
+// untouched; one with no recognizable header block is returned as is and
+// will be scanned as raw text.
+func stripBinaryPrefix(raw []byte) []byte {
+	if headerStart.Match(raw) && headerStart.FindIndex(raw)[0] == 0 {
+		return raw
+	}
+	window := raw
+	if len(window) > 64<<10 {
+		window = window[:64<<10]
+	}
+	for _, loc := range headerStart.FindAllIndex(window, -1) {
+		i := loc[0]
+		// The name must begin a line (or the file), not be the tail of
+		// some binary that happens to contain letters.
+		if i > 0 {
+			if c := raw[i-1]; c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c == '-' {
+				continue
+			}
+		}
+		if looksLikeHeaderBlock(raw[i:]) {
+			return raw[i:]
+		}
+	}
+	return raw
+}
+
+// looksLikeHeaderBlock reports whether b begins with at least two
+// consecutive header or continuation lines, all printable ASCII — what a
+// real message header block looks like, and what a stretch of binary that
+// happens to contain "ab: " does not.
+func looksLikeHeaderBlock(b []byte) bool {
+	lines := 0
+	for len(b) > 0 && lines < 3 {
+		nl := bytes.IndexByte(b, '\n')
+		line := b
+		if nl >= 0 {
+			line, b = b[:nl], b[nl+1:]
+		} else {
+			b = nil
+		}
+		line = bytes.TrimRight(line, "\r")
+		if len(line) == 0 {
+			break
+		}
+		for _, c := range line {
+			if c < 0x20 && c != '\t' || c == 0x7f {
+				return false
+			}
+		}
+		if lines > 0 && (line[0] == ' ' || line[0] == '\t') {
+			lines++ // continuation of the previous header
+			continue
+		}
+		if m := headerStart.FindIndex(line); m == nil || m[0] != 0 {
+			return false
+		}
+		lines++
+	}
+	return lines >= 2
 }
 
 // rawHeader is a tolerant reading of a message's header block: lines up

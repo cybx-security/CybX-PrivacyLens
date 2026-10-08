@@ -1,6 +1,7 @@
 package extract
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -151,5 +152,40 @@ func TestFoldedEncodedSubject(t *testing.T) {
 		if !strings.Contains(it.Text, "219-09-9999") {
 			t.Errorf("%s: body lost: %q", name, it.Text)
 		}
+	}
+}
+
+// Outlook for Mac writes a short binary preamble (with a "crSM" tag) in
+// front of the raw message. It must be skipped, whether it ends mid-line
+// or with a line break, and a plain message must pass through untouched.
+func TestStripBinaryPrefix(t *testing.T) {
+	msg := "Received: from mail.example.com\r\nFrom: HR <hr@example.com>\r\nSubject: Forms\r\nContent-Type: text/plain\r\n\r\nssn 219-09-9999\r\n"
+	prefixes := map[string][]byte{
+		"midline":   {0x00, 0x00, 0x01, 0x20, 'e', 0xC9, 0x9F, '}', '>', 'K', 0x8F, 0xFE, '.', 'x', 0xE9, 'M', 0x9A, 'c', 'r', 'S', 'M', 0x8E, '>', 0xBF},
+		"linebreak": {0x00, 0x00, 'd', 0xE2, 0xA0, ' ', 'p', 0xD2, 'C', 'c', 'r', 'S', 'M', 0xBF, '\n', 0xBF, ' ', '\n'},
+		"none":      {},
+	}
+	for name, prefix := range prefixes {
+		raw := append(append([]byte{}, prefix...), msg...)
+		got := stripBinaryPrefix(raw)
+		if string(got) != msg {
+			t.Errorf("%s: prefix not stripped: %q", name, got[:min(len(got), 40)])
+		}
+		path := filepath.Join(t.TempDir(), name+".olk15MsgSource")
+		if err := os.WriteFile(path, raw, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		items, err := ReadMailStore(path)
+		if err != nil {
+			t.Errorf("%s: unexpected error: %v", name, err)
+		}
+		if len(items) != 1 || items[0].Subject != "Forms" || !strings.Contains(items[0].From, "hr@example.com") || !strings.Contains(items[0].Text, "219-09-9999") {
+			t.Errorf("%s: items = %+v", name, items)
+		}
+	}
+	// Pure binary with an accidental "ab: " in it is left alone.
+	junk := []byte{0x01, 0x02, 'a', 'b', ':', ' ', 0x03, 0x04, '\n', 0x05}
+	if got := stripBinaryPrefix(junk); !bytes.Equal(got, junk) {
+		t.Errorf("binary without a header block was altered: %q", got)
 	}
 }
