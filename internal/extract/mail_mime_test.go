@@ -201,3 +201,51 @@ func TestStripBinaryPrefix(t *testing.T) {
 		t.Errorf("binary without a header block was altered: %q", got)
 	}
 }
+
+// The exact bytes of a real Outlook for Mac message file (from a hex dump):
+// 16 fixed bytes, the 16-byte id, crSM, 4 bytes, then headers separated
+// by bare carriage returns. Subject, sender, body, and attachments must
+// all come through.
+func TestRealOutlookMacMessageFile(t *testing.T) {
+	prefix := []byte{
+		0xd0, 0x0d, 0x00, 0x00, 0x01, 0x01, 0x01, 0x00, 0x02, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00,
+		0x0a, 0x8e, 0x1d, 0x5a, 0x81, 0x20, 0x4a, 0x3c, 0xbb, 0x92, 0xf2, 0xaa, 0xcb, 0x9f, 0x61, 0x51,
+		'c', 'r', 'S', 'M', 0x8c, 0xaf, 0x96, 0x16,
+	}
+	msg := "From: Mycal Pedder <mycal.pedder@cybxsecurity.com>\r" +
+		"To: Tom Pedder <tom.pedder@cybxsecurity.com>\r" +
+		"Subject: Accepted: CybX planning\r" +
+		"Date: Wed, 08 Oct 2026 09:00:00 -0400\r" +
+		"MIME-Version: 1.0\r" +
+		"Content-Type: multipart/mixed; boundary=\"b\"\r" +
+		"\r" +
+		"--b\rContent-Type: text/plain\r\rHer SSN is 219-09-9999.\r" +
+		"--b\rContent-Type: text/csv; name=\"list.csv\"\rContent-Disposition: attachment; filename=\"list.csv\"\r\r" +
+		"name,card\rAnn,4111 1111 1111 1111\r" +
+		"--b--\r"
+	path := filepath.Join(t.TempDir(), "0A8E1D5A.olk15MsgSource")
+	if err := os.WriteFile(path, append(prefix, msg...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var got MailItem
+	var attText string
+	err := WalkMailStore(path, func(it MailItem) {
+		got = it
+		if len(it.Attachments) == 1 {
+			b, _ := os.ReadFile(it.Attachments[0].Path)
+			attText = string(b)
+		}
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Subject != "Accepted: CybX planning" || !strings.Contains(got.From, "mycal.pedder@cybxsecurity.com") || got.Date.IsZero() {
+		t.Errorf("headers: subject=%q from=%q date=%v", got.Subject, got.From, got.Date)
+	}
+	if !strings.Contains(got.Text, "219-09-9999") {
+		t.Errorf("body not read: %q", got.Text)
+	}
+	if !strings.Contains(attText, "4111 1111 1111 1111") {
+		t.Errorf("attachment not decoded: %q", attText)
+	}
+}

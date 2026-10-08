@@ -36,7 +36,7 @@ func walkMessageSource(path string, fn func(MailItem)) error {
 	if err != nil {
 		return err
 	}
-	raw = stripBinaryPrefix(raw)
+	raw = normalizeLineEndings(stripBinaryPrefix(raw))
 	dir, err := attachmentDir()
 	if err != nil {
 		return err
@@ -236,6 +236,29 @@ func stripBinaryPrefix(raw []byte) []byte {
 	return raw
 }
 
+// normalizeLineEndings turns bare-CR line endings — the classic Mac
+// convention Outlook for Mac still writes its message files with — into
+// CRLF, which MIME parsing requires. Decided on the header region: a
+// message whose first few KB hold no line feed at all is CR-terminated
+// throughout; existing CRLF pairs are kept as they are.
+func normalizeLineEndings(raw []byte) []byte {
+	probe := raw
+	if len(probe) > 4096 {
+		probe = probe[:4096]
+	}
+	if bytes.IndexByte(probe, '\n') >= 0 || bytes.IndexByte(probe, '\r') < 0 {
+		return raw
+	}
+	out := make([]byte, 0, len(raw)+len(raw)/16)
+	for i, c := range raw {
+		out = append(out, c)
+		if c == '\r' && (i+1 == len(raw) || raw[i+1] != '\n') {
+			out = append(out, '\n')
+		}
+	}
+	return out
+}
+
 func isNameByte(c byte) bool {
 	return c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c == '-'
 }
@@ -250,14 +273,17 @@ func looksLikeHeaderBlock(b []byte) bool {
 	}
 	lines := 0
 	for len(b) > 0 && lines < 3 {
-		nl := bytes.IndexByte(b, '\n')
+		nl := bytes.IndexAny(b, "\r\n")
 		line := b
 		if nl >= 0 {
+			crlf := b[nl] == '\r' && nl+1 < len(b) && b[nl+1] == '\n'
 			line, b = b[:nl], b[nl+1:]
+			if crlf {
+				b = b[1:]
+			}
 		} else {
 			b = nil
 		}
-		line = bytes.TrimRight(line, "\r")
 		if len(line) == 0 {
 			break
 		}
